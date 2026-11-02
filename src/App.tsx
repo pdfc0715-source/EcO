@@ -41,6 +41,16 @@ import { StatsView } from './views/StatsView';
 import { SettingsView } from './views/SettingsView';
 import { PublicShareView } from './views/PublicShareView';
 import { LandingPageView } from './views/LandingPageView';
+import { EcoBrandedStudioModal } from './components/branded/EcoBrandedStudioModal';
+import {
+  BrandedStudioMode,
+  BrandedVoucherData,
+  BrandedStatementData,
+  BrandedMonthlyCardData,
+  buildVoucherData,
+  buildStatementData
+} from './domain/exportBrandedDocument';
+import { computeStatsOverview, computeCategoryStats, getRecent24Months } from './domain/statistics';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { useAuth } from './context/AuthContext';
 import { EcoBackupV1 } from './domain/backupV1';
@@ -89,6 +99,18 @@ export default function App() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState<boolean>(false);
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
+
+  // Branded Document & Share Card Studio state
+  const availableMonths = useMemo(() => getRecent24Months(), []);
+  const [selectedStudioMonthKey, setSelectedStudioMonthKey] = useState<string>(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [isBrandedStudioOpen, setIsBrandedStudioOpen] = useState<boolean>(false);
+  const [brandedStudioMode, setBrandedStudioMode] = useState<BrandedStudioMode>('voucher');
+  const [brandedVoucherData, setBrandedVoucherData] = useState<BrandedVoucherData | null>(null);
+  const [brandedStatementData, setBrandedStatementData] = useState<BrandedStatementData | null>(null);
+  const [brandedMonthlyCardData, setBrandedMonthlyCardData] = useState<BrandedMonthlyCardData | null>(null);
 
   // Toast notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -239,6 +261,61 @@ export default function App() {
       .filter((e) => e.date === todayStr)
       .reduce((acc, curr) => acc + curr.amount, 0);
   }, [expenses, todayStr]);
+
+  const handleOpenVoucherStudio = useCallback((item: UnifiedActivityItem) => {
+    const data = buildVoucherData(item, paymentMethods, people, user?.displayName || 'EcO User');
+    setBrandedVoucherData(data);
+    setBrandedStudioMode('voucher');
+    setIsBrandedStudioOpen(true);
+  }, [paymentMethods, people, user?.displayName]);
+
+  const handleOpenStatementStudio = useCallback((person: PersonRecord, personTxs: PeerTransactionRecord[]) => {
+    const data = buildStatementData(person, personTxs, paymentMethods, user?.displayName || 'EcO User', user?.email || undefined);
+    setBrandedStatementData(data);
+    setBrandedStudioMode('person-statement');
+    setIsBrandedStudioOpen(true);
+  }, [paymentMethods, user?.displayName, user?.email]);
+
+  const handleOpenMonthlyCardStudio = useCallback((monthKey?: string) => {
+    const today = new Date();
+    const defaultKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const targetMonthKey = monthKey || selectedStudioMonthKey || defaultKey;
+    setSelectedStudioMonthKey(targetMonthKey);
+    const [year, month] = targetMonthKey.split('-').map(Number);
+    const dateObj = new Date(year, month - 1, 1);
+    const monthTitle = dateObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    const overview = computeStatsOverview(year, month, expenses, recurringExpenses, earnings, paymentMethods);
+    const catStats = computeCategoryStats(year, month, expenses, recurringExpenses);
+
+    const topCats = catStats.slice(0, 5).map((c) => ({
+      category: c.name,
+      amount: c.amount,
+      percentage: c.percentage
+    }));
+
+    const savingsRate = overview.totalEarned > 0
+      ? Math.max(0, Math.min(100, (overview.netSavings / overview.totalEarned) * 100))
+      : 0;
+
+    const cardData: BrandedMonthlyCardData = {
+      referenceId: `ECO-REP-${targetMonthKey.replace('-', '')}`,
+      monthKey: targetMonthKey,
+      monthTitle,
+      totalEarnings: overview.totalEarned,
+      totalExpenses: overview.totalSpent,
+      netSavings: overview.netSavings,
+      savingsRate,
+      topCategories: topCats,
+      activeWalletsCount: paymentMethods.filter((m) => m.isActive).length,
+      totalNetWorth: summary.netTotal,
+      userName: user?.displayName || 'EcO User'
+    };
+
+    setBrandedMonthlyCardData(cardData);
+    setBrandedStudioMode('monthly-card');
+    setIsBrandedStudioOpen(true);
+  }, [selectedStudioMonthKey, expenses, recurringExpenses, earnings, paymentMethods, summary.netTotal, user?.displayName]);
 
   // Unified Activity items for the List view
   const unifiedActivities: UnifiedActivityItem[] = useMemo(() => {
@@ -547,14 +624,31 @@ export default function App() {
     const sharedTxs = transactions.filter((t) => t.personId === sharedPerson.id);
 
     return (
-      <PublicShareView
-        person={sharedPerson}
-        transactions={sharedTxs}
-        onExit={() => {
-          window.history.replaceState({}, '', window.location.pathname);
-          setSharedPersonToken(null);
-        }}
-      />
+      <>
+        <PublicShareView
+          person={sharedPerson}
+          transactions={sharedTxs}
+          onOpenBrandedStatement={handleOpenStatementStudio}
+          onExit={() => {
+            window.history.replaceState({}, '', window.location.pathname);
+            setSharedPersonToken(null);
+          }}
+        />
+        <EcoBrandedStudioModal
+          isOpen={isBrandedStudioOpen}
+          mode={brandedStudioMode}
+          voucherData={brandedVoucherData}
+          statementData={brandedStatementData}
+          monthlyCardData={brandedMonthlyCardData}
+          availableMonths={availableMonths}
+          selectedMonthKey={selectedStudioMonthKey}
+          onMonthChange={(newMonthKey) => handleOpenMonthlyCardStudio(newMonthKey)}
+          initialTheme={settings.theme === 'light' ? 'light' : 'dark'}
+          initialPalette={settings.colorPalette || 'green'}
+          onClose={() => setIsBrandedStudioOpen(false)}
+          showToast={showToast}
+        />
+      </>
     );
   }
 
@@ -710,6 +804,8 @@ export default function App() {
               onUpdateTransfer={handleUpdateTransfer}
               onUpdateTransaction={handleUpdateTransaction}
               onDeleteActivity={handleDeleteActivity}
+              onOpenBrandedVoucher={handleOpenVoucherStudio}
+              onOpenBrandedMonthlyReport={() => handleOpenMonthlyCardStudio()}
             />
           )}
 
@@ -727,6 +823,7 @@ export default function App() {
               onUpdateEarning={handleUpdateEarning}
               onUpdateTransfer={handleUpdateTransfer}
               onUpdateTransaction={handleUpdateTransaction}
+              onOpenBrandedVoucher={handleOpenVoucherStudio}
               onOpenAddModal={() => {
                 setInitialAddKind(undefined);
                 setIsAddModalOpen(true);
@@ -788,6 +885,24 @@ export default function App() {
                 setIsAddModalOpen(true);
               }}
               onGenerateShareLink={handleGenerateShareLink}
+              onOpenBrandedStatement={handleOpenStatementStudio}
+              onOpenBrandedVoucher={(tx, person) => {
+                const unifiedItem: UnifiedActivityItem = {
+                  id: tx.id,
+                  activityType: 'transaction',
+                  direction: tx.type,
+                  amount: tx.amount,
+                  title: tx.type === 'give' ? `Lent to ${person.name}` : `Borrowed from ${person.name}`,
+                  categoryOrSourceOrPerson: person.name,
+                  date: tx.date,
+                  payMethodId: tx.payMethodId,
+                  description: tx.description,
+                  feeAmount: tx.chargeAmount,
+                  timestamp: tx.timestamp || Date.now(),
+                  rawRecord: tx
+                };
+                handleOpenVoucherStudio(unifiedItem);
+              }}
               onCreateConnection={async (code, peerName) => {
                 const res = await repository.requestConnection(code, peerName);
                 if (res.success) {
@@ -849,6 +964,7 @@ export default function App() {
               paymentMethods={paymentMethods}
               settings={settings}
               onNavigateToSettings={() => setCurrentTab('settings')}
+              onOpenBrandedMonthlyReport={handleOpenMonthlyCardStudio}
               showToast={showToast}
             />
           )}
@@ -1067,6 +1183,22 @@ export default function App() {
       <SupportModal
         isOpen={isSupportOpen}
         onClose={() => setIsSupportOpen(false)}
+      />
+
+      {/* EcO Branded Document & Share Card Studio Modal */}
+      <EcoBrandedStudioModal
+        isOpen={isBrandedStudioOpen}
+        mode={brandedStudioMode}
+        voucherData={brandedVoucherData}
+        statementData={brandedStatementData}
+        monthlyCardData={brandedMonthlyCardData}
+        availableMonths={availableMonths}
+        selectedMonthKey={selectedStudioMonthKey}
+        onMonthChange={(newMonthKey) => handleOpenMonthlyCardStudio(newMonthKey)}
+        initialTheme={settings.theme === 'light' ? 'light' : 'dark'}
+        initialPalette={settings.colorPalette || 'green'}
+        onClose={() => setIsBrandedStudioOpen(false)}
+        showToast={showToast}
       />
 
       {/* Toast Notification (Top-Right, directly below header) */}
