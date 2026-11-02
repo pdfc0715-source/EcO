@@ -17,7 +17,8 @@ import {
   Layers,
   RotateCw,
   SlidersHorizontal,
-  Radar
+  Radar,
+  Sparkles
 } from 'lucide-react';
 import {
   ExpenseRecord,
@@ -66,6 +67,7 @@ interface StatsViewProps {
   settings: UserSettings;
   theme?: 'dark' | 'light';
   onNavigateToSettings?: () => void;
+  onOpenBrandedMonthlyReport?: (monthKey: string) => void;
   showToast?: (msg: string) => void;
 }
 
@@ -77,6 +79,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
   settings,
   theme = 'dark',
   onNavigateToSettings,
+  onOpenBrandedMonthlyReport,
   showToast
 }) => {
   const isDark = theme === 'dark';
@@ -398,49 +401,64 @@ export const StatsView: React.FC<StatsViewProps> = ({
           </p>
         </div>
 
-        {/* 24-Month Selector: Prev / Next buttons + centered month label + dropdown */}
-        <div className={`flex items-center gap-1.5 self-start sm:self-auto rounded-lg p-1 border shadow-xs ${
-          isDark ? 'bg-[#1A1C20] border-[#3D4943]/40' : 'bg-white border-slate-200'
-        }`}>
-          <button
-            type="button"
-            onClick={handlePrevMonth}
-            disabled={currentMonthIdx >= monthOptions.length - 1}
-            className={`p-1.5 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer ${
-              isDark ? 'text-[#87948C] hover:text-[#E2E2E8] hover:bg-[#282A2E]' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
-            }`}
-            title="Previous month"
-            aria-label="Previous month"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {/* 24-Month Selector: Prev / Next buttons + centered month label + dropdown */}
+          <div className={`flex items-center gap-1.5 rounded-lg p-1 border shadow-xs ${
+            isDark ? 'bg-[#1A1C20] border-[#3D4943]/40' : 'bg-white border-slate-200'
+          }`}>
+            <button
+              type="button"
+              onClick={handlePrevMonth}
+              disabled={currentMonthIdx >= monthOptions.length - 1}
+              className={`p-1.5 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer ${
+                isDark ? 'text-[#87948C] hover:text-[#E2E2E8] hover:bg-[#282A2E]' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+              }`}
+              title="Previous month"
+              aria-label="Previous month"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
 
-          <select
-            value={selectedMonthKey}
-            onChange={(e) => setSelectedMonthKey(e.target.value)}
-            className={`bg-transparent text-xs font-semibold outline-none cursor-pointer py-1 px-2 border-0 font-mono ${
-              isDark ? 'text-[#73E3B4]' : 'text-emerald-700'
-            }`}
-          >
-            {monthOptions.map((opt) => (
-              <option key={opt.key} value={opt.key} className={isDark ? 'bg-[#1A1C20] text-[#E2E2E8]' : 'bg-white text-slate-900'}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+            <select
+              value={selectedMonthKey}
+              onChange={(e) => setSelectedMonthKey(e.target.value)}
+              className={`bg-transparent text-xs font-semibold outline-none cursor-pointer py-1 px-2 border-0 font-mono ${
+                isDark ? 'text-[#73E3B4]' : 'text-emerald-700'
+              }`}
+            >
+              {monthOptions.map((opt) => (
+                <option key={opt.key} value={opt.key} className={isDark ? 'bg-[#1A1C20] text-[#E2E2E8]' : 'bg-white text-slate-900'}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
 
-          <button
-            type="button"
-            onClick={handleNextMonth}
-            disabled={currentMonthIdx <= 0}
-            className={`p-1.5 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer ${
-              isDark ? 'text-[#87948C] hover:text-[#E2E2E8] hover:bg-[#282A2E]' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
-            }`}
-            title="Next month"
-            aria-label="Next month"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
+            <button
+              type="button"
+              onClick={handleNextMonth}
+              disabled={currentMonthIdx <= 0}
+              className={`p-1.5 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer ${
+                isDark ? 'text-[#87948C] hover:text-[#E2E2E8] hover:bg-[#282A2E]' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+              }`}
+              title="Next month"
+              aria-label="Next month"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          {onOpenBrandedMonthlyReport && (
+            <button
+              type="button"
+              onClick={() => onOpenBrandedMonthlyReport(selectedMonthKey)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#55C79A]/15 hover:bg-[#55C79A]/25 border border-[#73E3B4]/40 text-xs text-[#73E3B4] font-semibold transition-all cursor-pointer shadow-xs active:scale-95"
+              title="Generate EcO Story Card & Monthly Report (PDF & Image)"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Export Report & Card</span>
+              <span className="sm:hidden">Export</span>
+            </button>
+          )}
         </div>
       </div>
 
