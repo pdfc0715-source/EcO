@@ -270,20 +270,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          {/* Quick Action Button */}
+          {/* Quick Action Buttons */}
           <div className="shrink-0 flex items-center gap-2 flex-wrap">
-            {onOpenBrandedMonthlyReport && (
-              <button
-                type="button"
-                onClick={onOpenBrandedMonthlyReport}
-                className="btn-md bg-[#1E2024] hover:bg-[#282A2E] text-[#73E3B4] border border-[#73E3B4]/40 shadow-xs gap-2 cursor-pointer active:scale-[0.98]"
-                title="Generate branded monthly report & story card (PDF & Image)"
-              >
-                <Sparkles className="w-4 h-4" />
-                <span className="hidden sm:inline">Export Report</span>
-                <span className="sm:hidden">Report</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => onOpenBrandedMonthlyReport?.()}
+              className="btn-md bg-[#1E2024] hover:bg-[#282A2E] text-[#73E3B4] border border-[#73E3B4]/50 shadow-xs gap-2 cursor-pointer active:scale-[0.98] flex items-center font-semibold"
+              title="Generate branded monthly report & story card (PDF & Image)"
+            >
+              <Sparkles className="w-4 h-4 text-[#73E3B4]" />
+              <span>Export Report</span>
+            </button>
             <button
               type="button"
               onClick={onOpenAddModal}
