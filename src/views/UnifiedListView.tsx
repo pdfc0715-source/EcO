@@ -16,7 +16,8 @@ import {
   Clock,
   Layers,
   FileText,
-  Filter
+  Filter,
+  Sparkles
 } from 'lucide-react';
 import {
   UnifiedActivityItem,
@@ -47,6 +48,7 @@ interface UnifiedListViewProps {
   onUpdateTransfer?: (transfer: TransferRecord) => void;
   onUpdateTransaction?: (tx: PeerTransactionRecord) => void;
   onOpenBrandedVoucher?: (item: UnifiedActivityItem) => void;
+  onOpenBrandedMonthlyReport?: () => void;
   onOpenAddModal: () => void;
 }
 
@@ -64,6 +66,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
   onUpdateTransfer,
   onUpdateTransaction,
   onOpenBrandedVoucher,
+  onOpenBrandedMonthlyReport,
   onOpenAddModal
 }) => {
   // Filter states
@@ -242,13 +245,26 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
             Chronological record of all expenses, income, transfers, and personal loans
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onOpenAddModal}
-          className="self-start sm:self-auto px-4 py-2 bg-[#55C79A] hover:bg-[#73E3B4] active:scale-[0.98] text-[#003826] font-semibold text-xs rounded-lg transition-all shadow-sm cursor-pointer"
-        >
-          + Record Entry
-        </button>
+        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+          {onOpenBrandedMonthlyReport && (
+            <button
+              type="button"
+              onClick={onOpenBrandedMonthlyReport}
+              className="px-3 py-2 bg-[#1E2024] hover:bg-[#282A2E] active:scale-[0.98] text-[#73E3B4] border border-[#73E3B4]/40 font-semibold text-xs rounded-lg transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+              title="Generate branded monthly report & story card"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Export Report</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onOpenAddModal}
+            className="px-4 py-2 bg-[#55C79A] hover:bg-[#73E3B4] active:scale-[0.98] text-[#003826] font-semibold text-xs rounded-lg transition-all shadow-sm cursor-pointer"
+          >
+            + Record Entry
+          </button>
+        </div>
       </div>
 
       {/* --- Filter Controls Card --- */}
