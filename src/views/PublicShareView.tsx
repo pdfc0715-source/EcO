@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, ArrowLeft, ArrowUpRight, ArrowDownRight, User } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, ArrowUpRight, ArrowDownRight, User, FileText } from 'lucide-react';
 import { PersonRecord, PeerTransactionRecord } from '../domain/types';
 import { formatTaka } from '../domain/money';
 import { formatDisplayDate } from '../domain/dates';
@@ -8,12 +8,14 @@ interface PublicShareViewProps {
   person: PersonRecord;
   transactions: PeerTransactionRecord[];
   onExit: () => void;
+  onOpenBrandedStatement?: (person: PersonRecord, transactions: PeerTransactionRecord[]) => void;
 }
 
 export const PublicShareView: React.FC<PublicShareViewProps> = ({
   person,
   transactions,
-  onExit
+  onExit,
+  onOpenBrandedStatement
 }) => {
   // Calculate balance from counterparty perspective
   // For owner: 'give' = owner gave to person (person owes owner +amount)
@@ -73,6 +75,19 @@ export const PublicShareView: React.FC<PublicShareViewProps> = ({
               </span>
             )}
           </div>
+
+          {onOpenBrandedStatement && (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => onOpenBrandedStatement(person, transactions)}
+                className="px-3.5 py-1.5 rounded-lg bg-[#0C0E12] hover:bg-[#1E2024] text-[#73E3B4] border border-[#73E3B4]/40 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs active:scale-95"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Export Statement (PDF & Image)</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Chronological Activity Log */}
