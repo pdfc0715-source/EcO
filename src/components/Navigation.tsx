@@ -12,7 +12,8 @@ import {
   Download,
   Smartphone,
   LogOut,
-  Bell
+  Bell,
+  Sparkles
 } from 'lucide-react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { Avatar } from './ui/Avatar';
@@ -24,6 +25,7 @@ interface NavigationProps {
   currentTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
   onOpenAddModal: () => void;
+  onOpenExportReport?: () => void;
   onOpenNotifications?: () => void;
   onOpenFeedback: () => void;
   onOpenSupport: () => void;
@@ -38,6 +40,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   currentTab,
   onSelectTab,
   onOpenAddModal,
+  onOpenExportReport,
   onOpenNotifications,
   onOpenFeedback,
   onOpenSupport,
@@ -91,8 +94,8 @@ export const Navigation: React.FC<NavigationProps> = ({
           </div>
         </div>
 
-        {/* Primary Add Entry CTA */}
-        <div className="p-3">
+        {/* Primary Add Entry CTA & Export Report */}
+        <div className="p-3 space-y-2">
           <button
             onClick={onOpenAddModal}
             className="w-full h-10 rounded-lg bg-[#55C79A] hover:bg-[#73E3B4] active:scale-[0.98] transition-all text-[#003826] font-semibold text-xs tracking-wide flex items-center justify-center gap-2 shadow-sm cursor-pointer"
@@ -100,6 +103,16 @@ export const Navigation: React.FC<NavigationProps> = ({
             <Plus className="w-4 h-4 stroke-[2.5]" />
             <span>Add Entry</span>
           </button>
+          {onOpenExportReport && (
+            <button
+              onClick={onOpenExportReport}
+              className="w-full h-9 rounded-lg bg-[#1E2024] hover:bg-[#282A2E] border border-[#73E3B4]/40 active:scale-[0.98] transition-all text-[#73E3B4] font-semibold text-xs tracking-wide flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+              title="Generate branded monthly report & story card (PDF & Image)"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Export Report</span>
+            </button>
+          )}
         </div>
 
         {/* Navigation list */}
@@ -273,8 +286,8 @@ export const Navigation: React.FC<NavigationProps> = ({
               </div>
             )}
 
-            {/* Quick Add CTA */}
-            <div className="p-3">
+            {/* Quick Add CTA & Export Report */}
+            <div className="p-3 space-y-2">
               <button
                 onClick={() => {
                   onCloseMobileDrawer?.();
@@ -285,6 +298,18 @@ export const Navigation: React.FC<NavigationProps> = ({
                 <Plus className="w-4 h-4 stroke-[2.5]" />
                 <span>Add Entry</span>
               </button>
+              {onOpenExportReport && (
+                <button
+                  onClick={() => {
+                    onCloseMobileDrawer?.();
+                    onOpenExportReport();
+                  }}
+                  className="w-full h-9 rounded-lg bg-[#1E2024] border border-[#73E3B4]/40 text-[#73E3B4] font-semibold text-xs flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Export Report</span>
+                </button>
+              )}
             </div>
 
             {/* Nav list */}
