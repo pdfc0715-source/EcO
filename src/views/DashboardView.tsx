@@ -81,6 +81,8 @@ interface DashboardViewProps {
   onUpdateTransfer?: (transfer: TransferRecord) => void;
   onUpdateTransaction?: (tx: PeerTransactionRecord) => void;
   onDeleteActivity?: (item: UnifiedActivityItem) => void;
+  onOpenBrandedVoucher?: (item: UnifiedActivityItem) => void;
+  onOpenBrandedMonthlyReport?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -109,7 +111,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onUpdateEarning,
   onUpdateTransfer,
   onUpdateTransaction,
-  onDeleteActivity
+  onDeleteActivity,
+  onOpenBrandedVoucher,
+  onOpenBrandedMonthlyReport
 }) => {
   const [showFormulaModal, setShowFormulaModal] = useState(false);
   const [showBudgetDetailsModal, setShowBudgetDetailsModal] = useState(false);
@@ -267,7 +271,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {/* Quick Action Button */}
-          <div className="shrink-0 flex items-center gap-2">
+          <div className="shrink-0 flex items-center gap-2 flex-wrap">
+            {onOpenBrandedMonthlyReport && (
+              <button
+                type="button"
+                onClick={onOpenBrandedMonthlyReport}
+                className="btn-md bg-[#1E2024] hover:bg-[#282A2E] text-[#73E3B4] border border-[#73E3B4]/40 shadow-xs gap-2 cursor-pointer active:scale-[0.98]"
+                title="Generate branded monthly report & story card (PDF & Image)"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span className="hidden sm:inline">Export Report</span>
+                <span className="sm:hidden">Report</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={onOpenAddModal}
@@ -1189,6 +1205,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             <div className="pt-3 border-t border-[#3D4943]/30 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
+                {onOpenBrandedVoucher && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const toVoucher = detailItem;
+                      onOpenBrandedVoucher(toVoucher);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-[#1E2024] hover:bg-[#282A2E] text-[#73E3B4] border border-[#73E3B4]/40 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Generate official EcO voucher / receipt (PDF & Image)"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>EcO Voucher</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
