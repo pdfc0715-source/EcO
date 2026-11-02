@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, Download, ShieldCheck, Settings, Menu, Coffee, LogOut } from 'lucide-react';
+import { Bell, Download, ShieldCheck, Settings, Menu, Coffee, LogOut, Sparkles } from 'lucide-react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { Avatar } from './ui/Avatar';
 import { AuthUserProfile } from '../data/firebase';
@@ -8,6 +8,7 @@ interface HeaderProps {
   onOpenNotifications: () => void;
   onOpenSettings: () => void;
   onOpenSupport: () => void;
+  onOpenExportReport?: () => void;
   onOpenMobileDrawer?: () => void;
   onSignOut?: () => void;
   user?: AuthUserProfile | null;
@@ -19,6 +20,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNotifications,
   onOpenSettings,
   onOpenSupport,
+  onOpenExportReport,
   onOpenMobileDrawer,
   onSignOut,
   user,
@@ -50,8 +52,23 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Right zone: Support button, PWA Install button, Notification bell, and User Profile / Settings */}
+      {/* Right zone: Export Report button, Support button, PWA Install button, Notification bell, and User Profile / Settings */}
       <div className="flex items-center gap-1.5 sm:gap-2.5">
+        {/* Export Report CTA Button */}
+        {onOpenExportReport && (
+          <button
+            type="button"
+            onClick={onOpenExportReport}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 min-h-[36px] rounded-lg bg-[#1E2024] hover:bg-[#282A2E] border border-[#73E3B4]/40 active:scale-[0.98] text-xs text-[#73E3B4] font-semibold shadow-xs transition-all cursor-pointer"
+            title="Generate branded monthly report & story card (PDF & Image)"
+            aria-label="Export Report"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Export Report</span>
+            <span className="sm:hidden">Report</span>
+          </button>
+        )}
+
         {/* Support CTA Button — Warm Golden Yellow */}
         <button
           onClick={onOpenSupport}
