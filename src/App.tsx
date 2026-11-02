@@ -703,6 +703,7 @@ export default function App() {
           setInitialAddKind(undefined);
           setIsAddModalOpen(true);
         }}
+        onOpenExportReport={() => handleOpenMonthlyCardStudio()}
         onOpenNotifications={() => setIsNotificationsOpen(true)}
         onOpenFeedback={() => setIsFeedbackOpen(true)}
         onOpenSupport={() => setIsSupportOpen(true)}
@@ -720,6 +721,7 @@ export default function App() {
           onOpenNotifications={() => setIsNotificationsOpen(true)}
           onOpenSettings={() => setCurrentTab('settings')}
           onOpenSupport={() => setIsSupportOpen(true)}
+          onOpenExportReport={() => handleOpenMonthlyCardStudio()}
           onOpenMobileDrawer={() => setIsMobileDrawerOpen(true)}
           onSignOut={handleSignOut}
           user={user}
@@ -824,6 +826,7 @@ export default function App() {
               onUpdateTransfer={handleUpdateTransfer}
               onUpdateTransaction={handleUpdateTransaction}
               onOpenBrandedVoucher={handleOpenVoucherStudio}
+              onOpenBrandedMonthlyReport={() => handleOpenMonthlyCardStudio()}
               onOpenAddModal={() => {
                 setInitialAddKind(undefined);
                 setIsAddModalOpen(true);
