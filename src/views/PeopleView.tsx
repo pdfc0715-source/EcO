@@ -23,7 +23,8 @@ import {
   SlidersHorizontal,
   HandCoins,
   Receipt,
-  Pencil
+  Pencil,
+  FileText
 } from 'lucide-react';
 import {
   PersonRecord,
@@ -53,6 +54,8 @@ interface PeopleViewProps {
   onDeletePerson: (personId: string) => void;
   onOpenAddPeerTransaction: (personId: string) => void;
   onGenerateShareLink: (personId: string) => string;
+  onOpenBrandedStatement?: (person: PersonRecord, transactions: PeerTransactionRecord[]) => void;
+  onOpenBrandedVoucher?: (tx: PeerTransactionRecord, person: PersonRecord) => void;
   onCreateConnection?: (code: string, peerName: string) => void;
   onUpdateConnectionStatus?: (connectionId: string, status: ConnectionStatus) => void;
   onDeleteConnection?: (connectionId: string) => void;
@@ -84,6 +87,8 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
   onDeletePerson,
   onOpenAddPeerTransaction,
   onGenerateShareLink,
+  onOpenBrandedStatement,
+  onOpenBrandedVoucher,
   onCreateConnection,
   onUpdateConnectionStatus,
   onDeleteConnection,
@@ -1623,6 +1628,19 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
                   <span>WhatsApp Reminder</span>
                 </button>
               )}
+              {onOpenBrandedStatement && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenBrandedStatement(selectedPerson, personTransactions);
+                  }}
+                  className="py-2 px-3 rounded-lg bg-[#0C0E12] hover:bg-[#1E2024] text-[#73E3B4] border border-[#73E3B4]/40 text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Generate official EcO statement & share card (PDF & Image)"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Statement & PDF</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -1662,8 +1680,20 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
                         {formatDisplayDate(tx.date)} {tx.description ? `· ${tx.description}` : ''}
                       </div>
                     </div>
-                    <div className="text-right font-mono font-bold tabular-nums text-[#E2E2E8]">
-                      {formatTaka(tx.amount)}
+                    <div className="flex items-center gap-2">
+                      <div className="text-right font-mono font-bold tabular-nums text-[#E2E2E8]">
+                        {formatTaka(tx.amount)}
+                      </div>
+                      {onOpenBrandedVoucher && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenBrandedVoucher(tx, selectedPerson)}
+                          className="p-1 rounded bg-[#0C0E12] hover:bg-[#1E2024] text-[#87948C] hover:text-[#73E3B4] border border-[#3D4943]/30 transition-colors cursor-pointer"
+                          title="Generate EcO Voucher / Receipt"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))
