@@ -46,6 +46,7 @@ interface UnifiedListViewProps {
   onUpdateEarning?: (earning: EarningRecord) => void;
   onUpdateTransfer?: (transfer: TransferRecord) => void;
   onUpdateTransaction?: (tx: PeerTransactionRecord) => void;
+  onOpenBrandedVoucher?: (item: UnifiedActivityItem) => void;
   onOpenAddModal: () => void;
 }
 
@@ -62,6 +63,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
   onUpdateEarning,
   onUpdateTransfer,
   onUpdateTransaction,
+  onOpenBrandedVoucher,
   onOpenAddModal
 }) => {
   // Filter states
@@ -649,6 +651,21 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
 
+                  {/* Voucher & Receipt Export Button */}
+                  {onOpenBrandedVoucher && (
+                    <button
+                      type="button"
+                      title="Generate Official EcO Voucher / Receipt (PDF & Image)"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenBrandedVoucher(item);
+                      }}
+                      className="p-1.5 rounded-lg bg-[#282A2E]/60 hover:bg-[#73E3B4]/20 text-[#87948C] hover:text-[#73E3B4] transition-colors cursor-pointer"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
                   <ChevronRight className="w-4 h-4 text-[#87948C] group-hover:text-[#E2E2E8] transition-colors" />
                 </div>
               </div>
@@ -773,6 +790,20 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
             {/* Actions: Edit, Delete, Close */}
             <div className="pt-3 border-t border-[#3D4943]/30 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
+                {onOpenBrandedVoucher && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const toVoucher = detailItem;
+                      onOpenBrandedVoucher(toVoucher);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-[#1E2024] hover:bg-[#282A2E] text-[#73E3B4] border border-[#73E3B4]/40 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Generate official EcO voucher / receipt (PDF & Image)"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>EcO Voucher</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
