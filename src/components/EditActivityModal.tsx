@@ -264,14 +264,14 @@ export const EditActivityModal: React.FC<EditActivityModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm modal-backdrop-animate"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full max-w-lg bg-[#1A1C20] border border-[#3D4943]/60 rounded-xl p-5 sm:p-6 shadow-2xl flex flex-col space-y-4 max-h-[90vh] overflow-y-auto modal-content-animate">
+      <div className="w-full max-w-lg bg-[#1A1C20] border border-[#3D4943]/60 rounded-xl p-5 sm:p-6 shadow-2xl flex flex-col space-y-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#3D4943]/30 pb-3">
           <div className="flex items-center gap-2.5">
