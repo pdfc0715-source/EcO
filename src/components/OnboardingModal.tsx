@@ -177,7 +177,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md modal-backdrop-animate"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
       onClick={(e) => {
         if (onDismiss && e.target === e.currentTarget) {
           onDismiss();
@@ -186,7 +186,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full max-w-lg bg-[#1A1C20] border border-[#3D4943]/70 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] modal-content-animate">
+      <div className="w-full max-w-lg bg-[#1A1C20] border border-[#3D4943]/70 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="relative px-6 py-5 border-b border-[#3D4943]/40 bg-[#1E2024] text-center">
           {onDismiss && (
