@@ -31,11 +31,11 @@ export const FixedEmergencyDetailsModal: React.FC<FixedEmergencyDetailsModalProp
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm modal-backdrop-animate"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg bg-[#111317] border border-[#3D4943]/60 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-150"
+        className="w-full max-w-lg bg-[#111317] border border-[#3D4943]/60 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] modal-content-animate"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
