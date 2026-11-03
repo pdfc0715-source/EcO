@@ -47,13 +47,13 @@ export const Dialog: React.FC<DialogProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm modal-backdrop-animate"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
-        className={`w-full ${maxWidthClasses[maxWidth]} bg-[#1A1C20] border border-[#3D4943]/60 rounded-lg shadow-2xl flex flex-col overflow-hidden max-h-[90vh]`}
+        className={`w-full ${maxWidthClasses[maxWidth]} bg-[#1A1C20] border border-[#3D4943]/60 rounded-lg shadow-2xl flex flex-col overflow-hidden max-h-[90vh] modal-content-animate`}
         role="dialog"
         aria-modal="true"
       >
