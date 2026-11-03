@@ -694,14 +694,14 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
          ========================================================================= */}
       {detailItem && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm modal-backdrop-animate"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
           onClick={(e) => {
             if (e.target === e.currentTarget) setDetailItem(null);
           }}
           role="dialog"
           aria-modal="true"
         >
-          <div className="w-full max-w-md bg-[#1A1C20] border border-[#3D4943]/60 rounded-xl p-5 shadow-2xl flex flex-col space-y-4 modal-content-animate">
+          <div className="w-full max-w-md bg-[#1A1C20] border border-[#3D4943]/60 rounded-xl p-5 shadow-2xl flex flex-col space-y-4">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-[#3D4943]/30 pb-3">
               <div className="flex items-center gap-2">
