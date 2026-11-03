@@ -922,11 +922,11 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md modal-backdrop-animate"
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full max-w-4xl bg-[#1A1C20] border border-[#3D4943]/60 rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
+      <div className="w-full max-w-4xl bg-[#1A1C20] border border-[#3D4943]/60 rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden modal-content-animate">
         {/* Top Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#3D4943]/40 bg-[#1E2024]/80">
           <div className="flex items-center gap-3">
