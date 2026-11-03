@@ -110,14 +110,14 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm modal-backdrop-animate"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full max-w-lg bg-[#1A1C20] border border-[#3D4943]/70 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] modal-content-animate">
+      <div className="w-full max-w-lg bg-[#1A1C20] border border-[#3D4943]/70 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 border-b border-[#3D4943]/40 bg-[#1E2024]">
           <div className="flex items-center gap-2.5">
