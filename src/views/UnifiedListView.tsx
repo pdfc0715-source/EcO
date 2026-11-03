@@ -16,8 +16,7 @@ import {
   Clock,
   Layers,
   FileText,
-  Filter,
-  Sparkles
+  Filter
 } from 'lucide-react';
 import {
   UnifiedActivityItem,
@@ -48,7 +47,6 @@ interface UnifiedListViewProps {
   onUpdateTransfer?: (transfer: TransferRecord) => void;
   onUpdateTransaction?: (tx: PeerTransactionRecord) => void;
   onOpenBrandedVoucher?: (item: UnifiedActivityItem) => void;
-  onOpenBrandedMonthlyReport?: () => void;
   onOpenAddModal: () => void;
 }
 
@@ -66,7 +64,6 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
   onUpdateTransfer,
   onUpdateTransaction,
   onOpenBrandedVoucher,
-  onOpenBrandedMonthlyReport,
   onOpenAddModal
 }) => {
   // Filter states
@@ -245,18 +242,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
             Chronological record of all expenses, income, transfers, and personal loans
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
-          {onOpenBrandedMonthlyReport && (
-            <button
-              type="button"
-              onClick={onOpenBrandedMonthlyReport}
-              className="px-3 py-2 bg-[#1E2024] hover:bg-[#282A2E] active:scale-[0.98] text-[#73E3B4] border border-[#73E3B4]/40 font-semibold text-xs rounded-lg transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
-              title="Generate branded monthly report & story card"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Export Report</span>
-            </button>
-          )}
+        <div className="self-start sm:self-auto">
           <button
             type="button"
             onClick={onOpenAddModal}
@@ -708,14 +694,14 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
          ========================================================================= */}
       {detailItem && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm modal-backdrop-animate"
           onClick={(e) => {
             if (e.target === e.currentTarget) setDetailItem(null);
           }}
           role="dialog"
           aria-modal="true"
         >
-          <div className="w-full max-w-md bg-[#1A1C20] border border-[#3D4943]/60 rounded-xl p-5 shadow-2xl flex flex-col space-y-4">
+          <div className="w-full max-w-md bg-[#1A1C20] border border-[#3D4943]/60 rounded-xl p-5 shadow-2xl flex flex-col space-y-4 modal-content-animate">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-[#3D4943]/30 pb-3">
               <div className="flex items-center gap-2">
@@ -741,6 +727,22 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
               </div>
               <div className="text-xs text-[#BCCAC1] mt-0.5">{detailItem.title}</div>
             </div>
+
+            {/* Dedicated Branded Voucher Action Button (Balanced for mobile & desktop) */}
+            {onOpenBrandedVoucher && (
+              <button
+                type="button"
+                onClick={() => {
+                  const toVoucher = detailItem;
+                  onOpenBrandedVoucher(toVoucher);
+                }}
+                className="w-full py-2.5 px-3 rounded-lg bg-[#1E2024] hover:bg-[#282A2E] active:scale-[0.98] border border-[#73E3B4]/40 text-[#73E3B4] text-xs font-semibold flex items-center justify-center gap-2 shadow-xs cursor-pointer transition-all group"
+                title="Generate official EcO voucher / receipt (PDF & Image)"
+              >
+                <FileText className="w-4 h-4 text-[#73E3B4] group-hover:scale-110 transition-transform" />
+                <span>Generate EcO Voucher / Receipt</span>
+              </button>
+            )}
 
             {/* Field Breakdown List */}
             <div className="divide-y divide-[#3D4943]/20 text-xs">
@@ -803,23 +805,9 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
               </div>
             </div>
 
-            {/* Actions: Edit, Delete, Close */}
+            {/* Actions: Edit, Delete, Close (Comfortably fits on mobile without wrapping) */}
             <div className="pt-3 border-t border-[#3D4943]/30 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                {onOpenBrandedVoucher && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const toVoucher = detailItem;
-                      onOpenBrandedVoucher(toVoucher);
-                    }}
-                    className="px-3 py-1.5 rounded-lg bg-[#1E2024] hover:bg-[#282A2E] text-[#73E3B4] border border-[#73E3B4]/40 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                    title="Generate official EcO voucher / receipt (PDF & Image)"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>EcO Voucher</span>
-                  </button>
-                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -827,10 +815,10 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
                     setDetailItem(null);
                     setEditingItem(toEdit);
                   }}
-                  className="px-3 py-1.5 rounded-lg bg-[#73E3B4]/15 hover:bg-[#73E3B4]/25 text-[#73E3B4] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-lg bg-[#73E3B4]/15 hover:bg-[#73E3B4]/25 active:scale-[0.98] text-[#73E3B4] text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
                 >
                   <Pencil className="w-3.5 h-3.5" />
-                  <span>Edit Record</span>
+                  <span>Edit</span>
                 </button>
                 <button
                   type="button"
@@ -838,7 +826,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
                     setItemToDelete(detailItem);
                     setDetailItem(null);
                   }}
-                  className="px-3 py-1.5 rounded-lg bg-[#FFB4AB]/10 hover:bg-[#FFB4AB]/20 text-[#FFB4AB] text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-lg bg-[#FFB4AB]/10 hover:bg-[#FFB4AB]/20 active:scale-[0.98] text-[#FFB4AB] text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Delete</span>
@@ -848,7 +836,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
               <button
                 type="button"
                 onClick={() => setDetailItem(null)}
-                className="px-4 py-1.5 rounded-lg bg-[#282A2E] hover:bg-[#333539] text-xs text-[#E2E2E8] font-medium cursor-pointer"
+                className="px-4 py-1.5 rounded-lg bg-[#282A2E] hover:bg-[#333539] active:scale-[0.98] text-xs text-[#E2E2E8] font-medium cursor-pointer transition-all"
               >
                 Close
               </button>
