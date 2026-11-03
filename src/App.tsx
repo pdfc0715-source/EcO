@@ -771,8 +771,7 @@ export default function App() {
 
         {/* View Content Viewport */}
         <main className={`flex-1 ${user && user.providerId === 'email' && !user.emailVerified && !dismissEmailBanner ? 'pt-4' : 'pt-18'} px-4 sm:px-6 lg:px-8 max-w-7xl w-full mx-auto`}>
-          <div key={currentTab} className="view-enter">
-            {currentTab === 'dashboard' && (
+          {currentTab === 'dashboard' && (
             <DashboardView
               summary={summary}
               settings={settings}
@@ -1000,7 +999,6 @@ export default function App() {
               onSignOut={handleSignOut}
             />
           )}
-          </div>
         </main>
       </div>
 
