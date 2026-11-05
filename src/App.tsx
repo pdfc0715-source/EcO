@@ -41,13 +41,18 @@ import { StatsView } from './views/StatsView';
 import { SettingsView } from './views/SettingsView';
 import { PublicShareView } from './views/PublicShareView';
 import { LandingPageView } from './views/LandingPageView';
+import { SmartSettlementView } from './views/SmartSettlementView';
+import { PublicSettlementShareView } from './views/PublicSettlementShareView';
+import { SmartSettlement } from './domain/settlementTypes';
 import { EcoBrandedStudioModal } from './components/branded/EcoBrandedStudioModal';
 import {
   BrandedStudioMode,
   BrandedVoucherData,
+  BrandedMultiVoucherData,
   BrandedStatementData,
   BrandedMonthlyCardData,
   buildVoucherData,
+  buildMultiVoucherData,
   buildStatementData
 } from './domain/exportBrandedDocument';
 import { computeStatsOverview, computeCategoryStats, getRecent24Months } from './domain/statistics';
@@ -89,6 +94,7 @@ export default function App() {
   const [dismissedMilestones, setDismissedMilestones] = useState<Record<string, string[]>>(() => repository.getDismissedMilestones());
   const [myConnectionCode, setMyConnectionCode] = useState<string>(() => repository.getMyConnectionCode());
   const [communityIssues, setCommunityIssues] = useState<IssueReport[]>(() => repository.getCommunityIssues());
+  const [smartSettlements, setSmartSettlements] = useState<SmartSettlement[]>(() => repository.getSmartSettlements());
 
   // UI Navigation & Modals
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
@@ -109,6 +115,7 @@ export default function App() {
   const [isBrandedStudioOpen, setIsBrandedStudioOpen] = useState<boolean>(false);
   const [brandedStudioMode, setBrandedStudioMode] = useState<BrandedStudioMode>('voucher');
   const [brandedVoucherData, setBrandedVoucherData] = useState<BrandedVoucherData | null>(null);
+  const [brandedMultiVoucherData, setBrandedMultiVoucherData] = useState<BrandedMultiVoucherData | null>(null);
   const [brandedStatementData, setBrandedStatementData] = useState<BrandedStatementData | null>(null);
   const [brandedMonthlyCardData, setBrandedMonthlyCardData] = useState<BrandedMonthlyCardData | null>(null);
 
@@ -119,6 +126,11 @@ export default function App() {
   const [sharedPersonToken, setSharedPersonToken] = useState<string | null>(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('share');
+  });
+
+  const [sharedSettlementToken, setSharedSettlementToken] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('settlement');
   });
 
   const showToast = useCallback((msg: string) => {
@@ -174,6 +186,7 @@ export default function App() {
     setDismissedMilestones(repository.getDismissedMilestones());
     setMyConnectionCode(repository.getMyConnectionCode());
     setCommunityIssues(repository.getCommunityIssues());
+    setSmartSettlements(repository.getSmartSettlements());
   }, []);
 
   useEffect(() => {
@@ -266,6 +279,14 @@ export default function App() {
     const data = buildVoucherData(item, paymentMethods, people, user?.displayName || 'EcO User');
     setBrandedVoucherData(data);
     setBrandedStudioMode('voucher');
+    setIsBrandedStudioOpen(true);
+  }, [paymentMethods, people, user?.displayName]);
+
+  const handleOpenMultiVoucherStudio = useCallback((items: UnifiedActivityItem[], title?: string) => {
+    if (!items || items.length === 0) return;
+    const data = buildMultiVoucherData(items, paymentMethods, people, user?.displayName || 'EcO User', title);
+    setBrandedMultiVoucherData(data);
+    setBrandedStudioMode('multi-voucher');
     setIsBrandedStudioOpen(true);
   }, [paymentMethods, people, user?.displayName]);
 
@@ -638,6 +659,7 @@ export default function App() {
           isOpen={isBrandedStudioOpen}
           mode={brandedStudioMode}
           voucherData={brandedVoucherData}
+          multiVoucherData={brandedMultiVoucherData}
           statementData={brandedStatementData}
           monthlyCardData={brandedMonthlyCardData}
           availableMonths={availableMonths}
@@ -649,6 +671,18 @@ export default function App() {
           showToast={showToast}
         />
       </>
+    );
+  }
+
+  if (sharedSettlementToken) {
+    return (
+      <PublicSettlementShareView
+        shareToken={sharedSettlementToken}
+        onExit={() => {
+          window.history.replaceState({}, '', window.location.pathname);
+          setSharedSettlementToken(null);
+        }}
+      />
     );
   }
 
@@ -790,6 +824,7 @@ export default function App() {
               onNavigateToList={() => setCurrentTab('list')}
               onNavigateToWallets={() => setCurrentTab('wallets')}
               onNavigateToPeople={() => setCurrentTab('people')}
+              onNavigateToSettlements={() => setCurrentTab('settlements')}
               onNavigateToSettings={() => setCurrentTab('settings')}
               onOpenAddModal={() => {
                 setInitialAddKind(undefined);
@@ -824,10 +859,20 @@ export default function App() {
               onUpdateTransfer={handleUpdateTransfer}
               onUpdateTransaction={handleUpdateTransaction}
               onOpenBrandedVoucher={handleOpenVoucherStudio}
+              onOpenBrandedMultiVoucher={handleOpenMultiVoucherStudio}
               onOpenAddModal={() => {
                 setInitialAddKind(undefined);
                 setIsAddModalOpen(true);
               }}
+            />
+          )}
+
+          {currentTab === 'settlements' && (
+            <SmartSettlementView
+              settlements={smartSettlements}
+              wallets={paymentMethods}
+              currentUserName={user?.displayName || 'You'}
+              showToast={showToast}
             />
           )}
 
@@ -1190,6 +1235,7 @@ export default function App() {
         isOpen={isBrandedStudioOpen}
         mode={brandedStudioMode}
         voucherData={brandedVoucherData}
+        multiVoucherData={brandedMultiVoucherData}
         statementData={brandedStatementData}
         monthlyCardData={brandedMonthlyCardData}
         availableMonths={availableMonths}
