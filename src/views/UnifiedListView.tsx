@@ -32,6 +32,7 @@ import {
 } from '../domain/types';
 import { formatTaka } from '../domain/money';
 import { formatDisplayDate, formatExactDateTime } from '../domain/dates';
+import { resolvePaymentMethod, isMethodActive } from '../domain/paymentMethods';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { EditActivityModal } from '../components/EditActivityModal';
 
@@ -112,10 +113,13 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
 
       // 2. Method filter
       if (selectedMethodId !== 'all') {
+        const itemPay = resolvePaymentMethod(item.payMethodId, paymentMethods)?.id || item.payMethodId;
+        const itemFrom = resolvePaymentMethod(item.fromMethodId, paymentMethods)?.id || item.fromMethodId;
+        const itemTo = resolvePaymentMethod(item.toMethodId, paymentMethods)?.id || item.toMethodId;
         const matchesMethod =
-          item.payMethodId === selectedMethodId ||
-          item.fromMethodId === selectedMethodId ||
-          item.toMethodId === selectedMethodId;
+          itemPay === selectedMethodId ||
+          itemFrom === selectedMethodId ||
+          itemTo === selectedMethodId;
         if (!matchesMethod) return false;
       }
 
@@ -410,7 +414,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
             className="px-2.5 py-1.5 rounded-lg bg-[#0C0E12] border border-[#3D4943]/50 text-[#E2E2E8] focus:outline-none focus:border-[#73E3B4] cursor-pointer text-xs"
           >
             <option value="all">All Wallets</option>
-            {paymentMethods.map((m) => (
+            {paymentMethods.filter(isMethodActive).map((m) => (
               <option key={m.id} value={m.id}>{m.name}</option>
             ))}
           </select>
@@ -527,7 +531,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
               <p className="text-[11px] text-[#87948C]">
                 Calculated sum for: {dateFilterLabel}
                 {selectedCategory !== 'all' && ` • Category: ${selectedCategory}`}
-                {selectedMethodId !== 'all' && ` • Wallet: ${paymentMethods.find((m) => m.id === selectedMethodId)?.name}`}
+                {selectedMethodId !== 'all' && ` • Wallet: ${resolvePaymentMethod(selectedMethodId, paymentMethods)?.name || selectedMethodId}`}
                 {selectedPersonId !== 'all' && ` • Contact: ${people.find((p) => p.id === selectedPersonId)?.name}`}
               </p>
             </div>
@@ -545,7 +549,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
             </span>
             {selectedMethodId !== 'all' && (
               <span className="px-2 py-0.5 rounded-full bg-[#0C0E12] text-[#BCCAC1] border border-[#3D4943]/40">
-                Wallet: {paymentMethods.find((m) => m.id === selectedMethodId)?.name}
+                Wallet: {resolvePaymentMethod(selectedMethodId, paymentMethods)?.name || selectedMethodId}
               </span>
             )}
             {selectedPersonId !== 'all' && (
@@ -673,7 +677,9 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
             const isGive = item.activityType === 'transaction' && item.direction === 'give';
             const isTake = item.activityType === 'transaction' && item.direction === 'take';
 
-            const methodObj = paymentMethods.find((m) => m.id === item.payMethodId);
+            const methodObj = resolvePaymentMethod(item.payMethodId, paymentMethods);
+            const fromObj = resolvePaymentMethod(item.fromMethodId, paymentMethods);
+            const toObj = resolvePaymentMethod(item.toMethodId, paymentMethods);
             const isSelected = selectedItemIds.has(item.id);
 
             return (
@@ -728,12 +734,19 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
                       </span>
                       <span>·</span>
                       <span className="capitalize">{item.categoryOrSourceOrPerson}</span>
-                      {methodObj && (
+                      {isTransfer ? (
+                        <>
+                          <span>·</span>
+                          <span className="text-[#87948C]">
+                            {fromObj?.name || 'Wallet'} → {toObj?.name || 'Wallet'}
+                          </span>
+                        </>
+                      ) : methodObj ? (
                         <>
                           <span>·</span>
                           <span className="text-[#87948C]">{methodObj.name}</span>
                         </>
-                      )}
+                      ) : null}
                       {item.description && (
                         <>
                           <span>·</span>
@@ -946,7 +959,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
                 <div className="py-2 flex items-center justify-between">
                   <span className="text-[#87948C]">Wallet Account</span>
                   <span className="text-[#73E3B4] font-medium">
-                    {paymentMethods.find((m) => m.id === detailItem.payMethodId)?.name || 'Account'}
+                    {resolvePaymentMethod(detailItem.payMethodId, paymentMethods)?.name || detailItem.payMethodId}
                   </span>
                 </div>
               )}
@@ -955,7 +968,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
                 <div className="py-2 flex items-center justify-between">
                   <span className="text-[#87948C]">From Wallet</span>
                   <span className="text-[#E2E2E8]">
-                    {paymentMethods.find((m) => m.id === detailItem.fromMethodId)?.name || 'Source'}
+                    {resolvePaymentMethod(detailItem.fromMethodId, paymentMethods)?.name || detailItem.fromMethodId}
                   </span>
                 </div>
               )}
@@ -964,7 +977,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
                 <div className="py-2 flex items-center justify-between">
                   <span className="text-[#87948C]">To Wallet</span>
                   <span className="text-[#E2E2E8]">
-                    {paymentMethods.find((m) => m.id === detailItem.toMethodId)?.name || 'Destination'}
+                    {resolvePaymentMethod(detailItem.toMethodId, paymentMethods)?.name || detailItem.toMethodId}
                   </span>
                 </div>
               )}
