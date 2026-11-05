@@ -586,7 +586,7 @@ export const EditActivityModal: React.FC<EditActivityModalProps> = ({
               >
                 {activeMethods.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name} ({formatTaka(m.balance || 0)})
+                    {m.name}
                   </option>
                 ))}
               </select>
