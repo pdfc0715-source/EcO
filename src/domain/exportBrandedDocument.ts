@@ -15,7 +15,7 @@ import {
   TransferRecord
 } from './types';
 
-export type BrandedStudioMode = 'voucher' | 'person-statement' | 'monthly-card';
+export type BrandedStudioMode = 'voucher' | 'person-statement' | 'monthly-card' | 'multi-voucher';
 export type StudioTheme = 'dark' | 'light';
 export type StudioPalette = 'green' | 'blue' | 'orange';
 
@@ -23,6 +23,7 @@ export interface BrandedVoucherData {
   referenceId: string;
   timestamp: string;
   date: string;
+  createdDate?: string;
   activityType: 'expense' | 'earning' | 'transfer' | 'peer_give' | 'peer_take';
   title: string;
   categoryOrSource: string;
@@ -35,6 +36,29 @@ export interface BrandedVoucherData {
   note?: string;
   tag?: string;
   isRepayment?: boolean;
+}
+
+export interface BrandedMultiVoucherItem {
+  id: string;
+  title: string;
+  category: string;
+  amount: number;
+  walletName: string;
+  date: string;
+  description?: string;
+  activityType: 'expense' | 'earning' | 'transfer' | 'peer_give' | 'peer_take';
+}
+
+export interface BrandedMultiVoucherData {
+  referenceId: string;
+  createdDate: string; // Automatic created timestamp (e.g. "04 Nov 2026, 04:02 PM")
+  customTitle: string; // User-modifiable title
+  items: BrandedMultiVoucherItem[];
+  totalAmount: number;
+  totalCount: number;
+  userName: string;
+  dateRange: string;
+  walletBreakdown: { walletName: string; amount: number }[];
 }
 
 export interface BrandedStatementData {
@@ -130,10 +154,14 @@ export function buildVoucherData(
   const rawTx = item.rawRecord as PeerTransactionRecord;
   const isRepayment = rawTx?.tag?.toLowerCase().includes('repay') || item.title.toLowerCase().includes('repay');
 
+  const now = new Date();
+  const createdDate = `${formatDisplayDate(now.toISOString().split('T')[0])}, ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
   return {
     referenceId: generateVerificationReference('TX', item.id),
-    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    timestamp: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     date: item.date,
+    createdDate,
     activityType,
     title: item.title,
     categoryOrSource: item.categoryOrSourceOrPerson,
@@ -146,6 +174,82 @@ export function buildVoucherData(
     note: item.description,
     tag: rawTx?.tag,
     isRepayment
+  };
+}
+
+/**
+ * Builds consolidated multi-item voucher data from an array of selected activities
+ */
+export function buildMultiVoucherData(
+  items: UnifiedActivityItem[],
+  paymentMethods: PaymentMethod[],
+  people: PersonRecord[],
+  userName: string = 'EcO User',
+  customTitle?: string
+): BrandedMultiVoucherData {
+  const now = new Date();
+  const createdDate = `${formatDisplayDate(now.toISOString().split('T')[0])}, ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+  const voucherItems: BrandedMultiVoucherItem[] = items.map((item) => {
+    const method = paymentMethods.find((m) => m.id === item.payMethodId);
+    const fromMethod = paymentMethods.find((m) => m.id === item.fromMethodId);
+
+    let activityType: BrandedMultiVoucherItem['activityType'] = 'expense';
+    if (item.activityType === 'earning') activityType = 'earning';
+    else if (item.activityType === 'transfer') activityType = 'transfer';
+    else if (item.activityType === 'transaction') {
+      activityType = item.direction === 'give' ? 'peer_give' : 'peer_take';
+    }
+
+    return {
+      id: item.id,
+      title: item.title,
+      category: item.categoryOrSourceOrPerson || 'General',
+      amount: item.amount,
+      walletName: method?.name || fromMethod?.name || 'Cash',
+      date: item.date,
+      description: item.description,
+      activityType
+    };
+  });
+
+  const totalAmount = voucherItems.reduce((sum, it) => sum + it.amount, 0);
+
+  // Group by wallet
+  const walletMap = new Map<string, number>();
+  voucherItems.forEach((it) => {
+    walletMap.set(it.walletName, (walletMap.get(it.walletName) || 0) + it.amount);
+  });
+  const walletBreakdown = Array.from(walletMap.entries()).map(([walletName, amount]) => ({
+    walletName,
+    amount
+  }));
+
+  // Date range
+  const dates = Array.from(new Set(voucherItems.map((it) => it.date))).sort();
+  const dateRange = dates.length === 0
+    ? formatDisplayDate(now.toISOString().split('T')[0])
+    : dates.length === 1
+    ? formatDisplayDate(dates[0])
+    : `${formatDisplayDate(dates[0])} – ${formatDisplayDate(dates[dates.length - 1])}`;
+
+  // Smart default title
+  let defaultTitle = 'Market Expense Voucher';
+  const categories = Array.from(new Set(voucherItems.map((it) => it.category).filter(Boolean)));
+  if (categories.length === 1 && categories[0] !== 'General' && categories[0] !== 'Expense') {
+    defaultTitle = `${categories[0]} Voucher`;
+  }
+
+  return {
+    referenceId: generateVerificationReference('TX'),
+    createdDate,
+    customTitle: customTitle?.trim() || defaultTitle,
+    items: voucherItems,
+    totalAmount,
+    totalCount: voucherItems.length,
+    userName,
+    dateRange,
+    walletBreakdown
   };
 }
 
