@@ -25,7 +25,7 @@ import {
 import { getTodayDateString, calculateRecurringEndDate } from '../domain/dates';
 import { calculateTransferCharge } from '../domain/calculations';
 import { formatTaka } from '../domain/money';
-import { getDefaultCashMethodId } from '../domain/paymentMethods';
+import { getDefaultCashMethodId, isMethodActive, resolvePaymentMethod } from '../domain/paymentMethods';
 
 export type ActivityKind = 'expense' | 'earning' | 'transfer' | 'give' | 'take';
 
@@ -152,7 +152,7 @@ export const GlobalAddModal: React.FC<GlobalAddModalProps> = ({
   const [fromMethodId, setFromMethodId] = useState<string>(() => getDefaultCashMethodId(paymentMethods));
   const [toMethodId, setToMethodId] = useState<string>(() => {
     const cashId = getDefaultCashMethodId(paymentMethods);
-    const alt = paymentMethods.find((m) => m.id !== cashId && m.isActive) || paymentMethods.find((m) => m.id !== cashId) || paymentMethods[0];
+    const alt = paymentMethods.find((m) => m.id !== cashId && isMethodActive(m)) || paymentMethods.find((m) => m.id !== cashId) || paymentMethods[0];
     return alt?.id || cashId;
   });
   const [applyCharge, setApplyCharge] = useState<boolean>(false);
@@ -256,7 +256,7 @@ export const GlobalAddModal: React.FC<GlobalAddModalProps> = ({
         const cashId = getDefaultCashMethodId(paymentMethods);
         setPayMethodId(cashId);
         setFromMethodId(cashId);
-        const secondMethod = paymentMethods.find((m) => m.id !== cashId && m.isActive) || paymentMethods.find((m) => m.id !== cashId) || paymentMethods[0];
+        const secondMethod = paymentMethods.find((m) => m.id !== cashId && isMethodActive(m)) || paymentMethods.find((m) => m.id !== cashId) || paymentMethods[0];
         setToMethodId(secondMethod?.id || cashId);
       }
       if (combinedPeopleList.length > 0 && (!personId || !combinedPeopleList.some((p) => p.id === personId))) {
@@ -551,7 +551,7 @@ export const GlobalAddModal: React.FC<GlobalAddModalProps> = ({
                         const cashId = getDefaultCashMethodId(paymentMethods);
                         setPayMethodId(cashId);
                         setFromMethodId(cashId);
-                        const secondMethod = paymentMethods.find((m) => m.id !== cashId && m.isActive) || paymentMethods.find((m) => m.id !== cashId) || paymentMethods[0];
+                        const secondMethod = paymentMethods.find((m) => m.id !== cashId && isMethodActive(m)) || paymentMethods.find((m) => m.id !== cashId) || paymentMethods[0];
                         setToMethodId(secondMethod?.id || cashId);
                       }}
                       className="flex items-center gap-3.5 p-3 rounded bg-[#0C0E12] border border-[#3D4943]/40 hover:border-[#73E3B4]/50 hover:bg-[#1E2024] text-left transition-all group"
@@ -751,7 +751,7 @@ export const GlobalAddModal: React.FC<GlobalAddModalProps> = ({
                       onChange={(e) => setFromMethodId(e.target.value)}
                       className="w-full px-3 py-2 rounded bg-[#0C0E12] border border-[#3D4943]/50 text-[#E2E2E8] text-xs focus:outline-none focus:border-[#73E3B4]"
                     >
-                      {paymentMethods.filter((m) => m.isActive).map((m) => (
+                      {paymentMethods.filter(isMethodActive).map((m) => (
                         <option key={m.id} value={m.id}>{m.name}</option>
                       ))}
                     </select>
@@ -763,7 +763,7 @@ export const GlobalAddModal: React.FC<GlobalAddModalProps> = ({
                       onChange={(e) => setToMethodId(e.target.value)}
                       className="w-full px-3 py-2 rounded bg-[#0C0E12] border border-[#3D4943]/50 text-[#E2E2E8] text-xs focus:outline-none focus:border-[#73E3B4]"
                     >
-                      {paymentMethods.filter((m) => m.isActive).map((m) => (
+                      {paymentMethods.filter(isMethodActive).map((m) => (
                         <option key={m.id} value={m.id}>{m.name}</option>
                       ))}
                     </select>
@@ -1002,7 +1002,7 @@ export const GlobalAddModal: React.FC<GlobalAddModalProps> = ({
                     onChange={(e) => setPayMethodId(e.target.value)}
                     className="w-full px-3 py-2 rounded bg-[#0C0E12] border border-[#3D4943]/50 text-[#E2E2E8] text-xs focus:outline-none focus:border-[#73E3B4]"
                   >
-                    {paymentMethods.filter((m) => m.isActive).map((m) => (
+                    {paymentMethods.filter(isMethodActive).map((m) => (
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
                   </select>
@@ -1072,7 +1072,7 @@ export const GlobalAddModal: React.FC<GlobalAddModalProps> = ({
                   {applyCharge && parseFloat(amountStr) > 0 && (
                     <div className="pt-2 border-t border-[#3D4943]/20 space-y-1 font-mono text-[11px]">
                       <div className="flex justify-between text-[#87948C]">
-                        <span>Credited to {paymentMethods.find((m) => m.id === toMethodId)?.name}:</span>
+                        <span>Credited to {resolvePaymentMethod(toMethodId, paymentMethods)?.name || 'Destination'}:</span>
                         <span className="text-[#E2E2E8] font-semibold">{formatTaka(parseFloat(amountStr))}</span>
                       </div>
                       <div className="flex justify-between text-[#87948C]">
@@ -1080,7 +1080,7 @@ export const GlobalAddModal: React.FC<GlobalAddModalProps> = ({
                         <span className="text-[#FFB4AB]">{formatTaka((parseFloat(amountStr) * chargeRate) / 100)}</span>
                       </div>
                       <div className="flex justify-between text-[#BCCAC1] pt-1 border-t border-[#3D4943]/30 font-bold">
-                        <span>Total debited from {paymentMethods.find((m) => m.id === fromMethodId)?.name}:</span>
+                        <span>Total debited from {resolvePaymentMethod(fromMethodId, paymentMethods)?.name || 'Source'}:</span>
                         <span className="text-[#FFB4AB]">
                           {formatTaka(parseFloat(amountStr) + (parseFloat(amountStr) * chargeRate) / 100)}
                         </span>
@@ -1209,7 +1209,7 @@ export const GlobalAddModal: React.FC<GlobalAddModalProps> = ({
                             const feeAmt = (pAmt * peerChargeRate) / 100;
                             const personObj = people.find((p) => p.id === personId);
                             const personName = personObj?.name || 'Contact';
-                            const payName = paymentMethods.find((m) => m.id === payMethodId)?.name || 'Wallet';
+                            const payName = resolvePaymentMethod(payMethodId, paymentMethods)?.name || 'Wallet';
 
                             return (
                               <>
