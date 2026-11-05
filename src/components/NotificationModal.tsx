@@ -250,7 +250,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
                       >
                         {activeWallets.map((w) => (
                           <option key={w.id} value={w.id}>
-                            {w.name} ({formatTaka(w.balance)})
+                            {w.name}
                           </option>
                         ))}
                       </select>
