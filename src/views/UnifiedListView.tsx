@@ -16,7 +16,9 @@ import {
   Clock,
   Layers,
   FileText,
-  Filter
+  Filter,
+  Check,
+  CheckSquare
 } from 'lucide-react';
 import {
   UnifiedActivityItem,
@@ -47,6 +49,7 @@ interface UnifiedListViewProps {
   onUpdateTransfer?: (transfer: TransferRecord) => void;
   onUpdateTransaction?: (tx: PeerTransactionRecord) => void;
   onOpenBrandedVoucher?: (item: UnifiedActivityItem) => void;
+  onOpenBrandedMultiVoucher?: (items: UnifiedActivityItem[]) => void;
   onOpenAddModal: () => void;
 }
 
@@ -64,6 +67,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
   onUpdateTransfer,
   onUpdateTransaction,
   onOpenBrandedVoucher,
+  onOpenBrandedMultiVoucher,
   onOpenAddModal
 }) => {
   // Filter states
@@ -73,6 +77,10 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedPersonId, setSelectedPersonId] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<'all' | 'month' | 'week' | 'today'>('all');
+
+  // Multi-selection for consolidated voucher
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
 
   // Selected item for details drawer, editing & non-blocking delete
   const [detailItem, setDetailItem] = useState<UnifiedActivityItem | null>(null);
@@ -137,7 +145,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
         const matchTitle = item.title.toLowerCase().includes(term);
-        const matchDesc = item.description.toLowerCase().includes(term);
+        const matchDesc = item.description ? item.description.toLowerCase().includes(term) : false;
         const matchCat = item.categoryOrSourceOrPerson.toLowerCase().includes(term);
         if (!matchTitle && !matchDesc && !matchCat) return false;
       }
@@ -205,6 +213,38 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
 
   const pagedList = filteredActivities.slice(0, visibleCount);
 
+  // Selected items calculation for consolidated voucher
+  const selectedItems = useMemo(() => {
+    if (selectedItemIds.size === 0) return [];
+    return activities.filter((a) => selectedItemIds.has(a.id));
+  }, [activities, selectedItemIds]);
+
+  const selectedTotalAmount = useMemo(() => {
+    return selectedItems.reduce((acc, curr) => acc + curr.amount, 0);
+  }, [selectedItems]);
+
+  const toggleItemSelection = (id: string) => {
+    setSelectedItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllFiltered = () => {
+    const next = new Set(selectedItemIds);
+    filteredActivities.forEach((a) => next.add(a.id));
+    setSelectedItemIds(next);
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedItemIds(new Set());
+  };
+
   const clearAllFilters = () => {
     setSearchTerm('');
     setSelectedType('all');
@@ -242,7 +282,30 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
             Chronological record of all expenses, income, transfers, and personal loans
           </p>
         </div>
-        <div className="self-start sm:self-auto">
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          {onOpenBrandedMultiVoucher && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsSelectionMode((prev) => {
+                  if (prev) {
+                    setSelectedItemIds(new Set());
+                  }
+                  return !prev;
+                });
+              }}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                isSelectionMode
+                  ? 'bg-[#1E2024] text-[#73E3B4] border-[#73E3B4]/60'
+                  : 'bg-[#1A1C20] text-[#BCCAC1] hover:text-[#E2E2E8] border-[#3D4943]/40 hover:bg-[#282A2E]'
+              }`}
+              title="Select multiple expenses to create a consolidated voucher"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>{isSelectionMode ? 'Cancel Selection' : 'Select for Voucher'}</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onOpenAddModal}
@@ -252,6 +315,41 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Selection Helper Bar (Visible when in selection mode) */}
+      {isSelectionMode && (
+        <div className="p-3 bg-[#1E2024] border border-[#73E3B4]/40 rounded-xl flex flex-wrap items-center justify-between gap-2.5 shadow-sm">
+          <div className="flex items-center gap-2 text-xs text-[#E2E2E8]">
+            <span className="w-2 h-2 rounded-full bg-[#73E3B4]" />
+            <span className="font-semibold text-[#73E3B4]">{selectedItemIds.size}</span>
+            <span>selected</span>
+            {selectedItemIds.size > 0 && (
+              <span className="font-mono text-xs text-[#BCCAC1]">
+                · Total: {formatTaka(selectedTotalAmount)}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSelectAllFiltered}
+              className="px-2.5 py-1 text-xs font-medium rounded-md bg-[#0C0E12] hover:bg-[#282A2E] text-[#BCCAC1] hover:text-[#E2E2E8] border border-[#3D4943]/40 cursor-pointer"
+            >
+              Select All Filtered ({filteredActivities.length})
+            </button>
+            {selectedItemIds.size > 0 && (
+              <button
+                type="button"
+                onClick={handleDeselectAll}
+                className="px-2.5 py-1 text-xs font-medium rounded-md bg-[#0C0E12] hover:bg-[#282A2E] text-[#FFB4AB] border border-[#FFB4AB]/30 cursor-pointer"
+              >
+                Clear Selection
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* --- Filter Controls Card --- */}
       <div className="bg-[#1A1C20] border border-[#3D4943]/40 rounded-xl p-4 space-y-3 shadow-sm">
@@ -576,14 +674,40 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
             const isTake = item.activityType === 'transaction' && item.direction === 'take';
 
             const methodObj = paymentMethods.find((m) => m.id === item.payMethodId);
+            const isSelected = selectedItemIds.has(item.id);
 
             return (
               <div
                 key={item.id}
-                onClick={() => setDetailItem(item)}
-                className="p-3.5 flex items-center justify-between hover:bg-[#1E2024]/70 transition-colors cursor-pointer group"
+                onClick={() => {
+                  if (isSelectionMode) {
+                    toggleItemSelection(item.id);
+                  } else {
+                    setDetailItem(item);
+                  }
+                }}
+                className={`p-3.5 flex items-center justify-between transition-colors cursor-pointer group ${
+                  isSelected ? 'bg-[#73E3B4]/10 hover:bg-[#73E3B4]/15' : 'hover:bg-[#1E2024]/70'
+                }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
+                  {/* Selection Checkbox */}
+                  {isSelectionMode && (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleItemSelection(item.id);
+                      }}
+                      className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
+                        isSelected
+                          ? 'bg-[#73E3B4] border-[#73E3B4] text-[#003826]'
+                          : 'border-[#3D4943] bg-[#0C0E12] hover:border-[#73E3B4]/70 text-transparent'
+                      }`}
+                    >
+                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                    </div>
+                  )}
+
                   {/* Semantic Icon Badge */}
                   <div className="p-2 rounded-lg bg-[#0C0E12] border border-[#3D4943]/30 shrink-0">
                     {isExpense && <TrendingDown className="w-4 h-4 text-[#FFB4AB]" />}
@@ -676,6 +800,48 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
         )}
       </div>
 
+      {/* Floating Bottom Consolidated Voucher Bar */}
+      {selectedItemIds.size > 0 && onOpenBrandedMultiVoucher && (
+        <div className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-lg bg-[#1A1C20] border-2 border-[#73E3B4]/70 rounded-2xl p-3.5 shadow-2xl flex items-center justify-between gap-3">
+          <div className="flex flex-col min-w-0">
+            <span className="text-xs font-bold text-[#E2E2E8] flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#73E3B4]"></span>
+              <span>{selectedItemIds.size} {selectedItemIds.size === 1 ? 'item' : 'items'} selected</span>
+            </span>
+            <span className="text-xs font-mono font-bold text-[#73E3B4] truncate">
+              Total: {formatTaka(selectedTotalAmount)}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedItems.length > 0) {
+                  onOpenBrandedMultiVoucher(selectedItems);
+                }
+              }}
+              className="px-3.5 py-2 rounded-xl bg-[#55C79A] hover:bg-[#73E3B4] text-[#003826] font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-colors active:scale-95"
+            >
+              <FileText className="w-4 h-4" />
+              <span>Create EcO Voucher</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedItemIds(new Set());
+                setIsSelectionMode(false);
+              }}
+              className="p-2 rounded-xl bg-[#282A2E] hover:bg-[#3D4943] text-[#87948C] hover:text-[#E2E2E8] cursor-pointer"
+              title="Cancel Selection"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Load More Button */}
       {filteredActivities.length > visibleCount && (
         <div className="text-center pt-2">
@@ -728,7 +894,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
               <div className="text-xs text-[#BCCAC1] mt-0.5">{detailItem.title}</div>
             </div>
 
-            {/* Dedicated Branded Voucher Action Button (Balanced for mobile & desktop) */}
+            {/* Dedicated Branded Voucher Action Button */}
             {onOpenBrandedVoucher && (
               <button
                 type="button"
@@ -741,6 +907,26 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
               >
                 <FileText className="w-4 h-4 text-[#73E3B4] group-hover:scale-110 transition-transform" />
                 <span>Generate EcO Voucher / Receipt</span>
+              </button>
+            )}
+
+            {/* Select for Consolidated Voucher Option */}
+            {onOpenBrandedMultiVoucher && (
+              <button
+                type="button"
+                onClick={() => {
+                  toggleItemSelection(detailItem.id);
+                  setIsSelectionMode(true);
+                  setDetailItem(null);
+                }}
+                className="w-full py-2 px-3 rounded-lg bg-[#0C0E12] hover:bg-[#1E2024] border border-[#3D4943]/40 text-[#BCCAC1] hover:text-[#73E3B4] text-xs font-medium flex items-center justify-center gap-2 cursor-pointer transition-colors"
+              >
+                <Layers className="w-3.5 h-3.5 text-[#73E3B4]" />
+                <span>
+                  {selectedItemIds.has(detailItem.id)
+                    ? 'Remove from Consolidated Voucher'
+                    : 'Add to Consolidated Voucher Selection'}
+                </span>
               </button>
             )}
 
