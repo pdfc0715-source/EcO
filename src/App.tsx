@@ -24,7 +24,7 @@ import {
   IssueReport
 } from './domain/types';
 import { calculateFinancialSummary } from './domain/calculations';
-import { BUILTIN_BKASH_ID, BUILTIN_NAGAD_ID } from './domain/paymentMethods';
+import { BUILTIN_BKASH_ID, BUILTIN_NAGAD_ID, resolvePaymentMethod, isMethodActive } from './domain/paymentMethods';
 import { invertProposalDirection } from './domain/connections';
 import { Navigation, NavTab } from './components/Navigation';
 import { Header } from './components/Header';
@@ -328,7 +328,7 @@ export default function App() {
       netSavings: overview.netSavings,
       savingsRate,
       topCategories: topCats,
-      activeWalletsCount: paymentMethods.filter((m) => m.isActive).length,
+      activeWalletsCount: paymentMethods.filter(isMethodActive).length,
       totalNetWorth: summary.netTotal,
       userName: user?.displayName || 'EcO User'
     };
@@ -392,8 +392,10 @@ export default function App() {
 
     // Transfers
     transfers.forEach((tr) => {
-      const fromName = paymentMethods.find((m) => m.id === tr.fromMethodId)?.name || 'Account';
-      const toName = paymentMethods.find((m) => m.id === tr.toMethodId)?.name || 'Account';
+      const fromObj = resolvePaymentMethod(tr.fromMethodId, paymentMethods);
+      const toObj = resolvePaymentMethod(tr.toMethodId, paymentMethods);
+      const fromName = fromObj?.name || 'Account';
+      const toName = toObj?.name || 'Account';
       list.push({
         id: tr.id,
         activityType: 'transfer',
@@ -429,12 +431,37 @@ export default function App() {
       });
     });
 
-    // Sort descending by date, then timestamp
-    return list.sort((a, b) => {
-      if (a.date !== b.date) {
-        return b.date.localeCompare(a.date);
+    const parseTime = (timestamp?: any, dateStr?: string): number => {
+      if (typeof timestamp === 'number' && !isNaN(timestamp) && timestamp > 0) {
+        return timestamp;
       }
-      return b.timestamp - a.timestamp;
+      if (typeof timestamp === 'string') {
+        const num = Number(timestamp);
+        if (!isNaN(num) && num > 0) return num;
+      }
+      if (dateStr) {
+        const parsed = Date.parse(dateStr);
+        if (!isNaN(parsed)) return parsed;
+      }
+      return 0;
+    };
+
+    const extractDateKey = (dateStr?: string): string => {
+      if (!dateStr) return '';
+      if (dateStr.includes('T')) return dateStr.split('T')[0];
+      return dateStr.trim();
+    };
+
+    // Sort descending by date, then timestamp (bulletproof against NaN)
+    return list.sort((a, b) => {
+      const dateA = extractDateKey(a.date);
+      const dateB = extractDateKey(b.date);
+      if (dateA !== dateB) {
+        return dateB.localeCompare(dateA);
+      }
+      const timeA = parseTime(a.timestamp, a.date);
+      const timeB = parseTime(b.timestamp, b.date);
+      return timeB - timeA;
     });
   }, [expenses, recurringExpenses, earnings, transfers, transactions, people, paymentMethods]);
 
