@@ -47,7 +47,7 @@ import { FixedEmergencyDetailsModal } from '../components/FixedEmergencyDetailsM
 import { EditActivityModal } from '../components/EditActivityModal';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { formatTaka } from '../domain/money';
-import { formatDisplayDate, getTodayDateString } from '../domain/dates';
+import { formatDisplayDate, formatExactDateTime, getTodayDateString } from '../domain/dates';
 import {
   computeDashboardLoanReminders,
   LoanMilestoneReminderItem,
@@ -1205,8 +1205,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             <div className="divide-y divide-[#3D4943]/20 text-xs">
               <div className="py-2 flex items-center justify-between">
-                <span className="text-[#87948C]">Date</span>
-                <span className="font-mono text-[#E2E2E8]">{formatDisplayDate(detailItem.date)}</span>
+                <span className="text-[#87948C]">Date & Time</span>
+                <span className="font-mono text-[#E2E2E8]">{formatExactDateTime(detailItem.date, detailItem.timestamp)}</span>
               </div>
               <div className="py-2 flex items-center justify-between">
                 <span className="text-[#87948C]">Category / Party</span>
