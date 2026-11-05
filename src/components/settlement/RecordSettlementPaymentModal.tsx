@@ -224,7 +224,7 @@ export const RecordSettlementPaymentModal: React.FC<RecordSettlementPaymentModal
                   >
                     {wallets.map((w) => (
                       <option key={w.id} value={w.id}>
-                        {w.name} (৳{w.balance.toLocaleString()})
+                        {w.name}
                       </option>
                     ))}
                   </select>
