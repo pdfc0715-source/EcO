@@ -11,7 +11,9 @@ import {
   AppNotification,
   EcOConnection,
   EcOProposal,
-  IssueReport
+  IssueReport,
+  encodePersonShareToken,
+  decodePersonShareToken
 } from '../domain/types';
 import {
   SmartSettlement,
@@ -2386,6 +2388,100 @@ export class HybridFirebaseRepository {
         }
       } catch (err) {
         console.warn('Could not fetch public settlement from Firestore:', err);
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Generates a distinct public share token for a specific person,
+   * creates an isolated public projection, and caches/mirrors it.
+   */
+  generateAndSyncPersonShare(personId: string, ownerName: string = 'EcO User'): string {
+    const person = this.people.find((p) => p.id === personId);
+    const token = person?.shareToken || encodePersonShareToken(personId);
+
+    if (person && !person.shareToken) {
+      person.shareToken = token;
+      this.updatePerson(person).catch(() => {});
+    }
+
+    const txs = this.transactions.filter((t: PeerTransactionRecord) => t.personId === personId);
+    const projection = {
+      shareToken: token,
+      person: person
+        ? { id: person.id, name: person.name, phone: person.phone }
+        : { id: personId, name: 'Counterparty Account' },
+      transactions: txs,
+      ownerName,
+      updatedAt: Date.now()
+    };
+
+    try {
+      localStorage.setItem(`eco_public_person_${token}`, JSON.stringify(projection));
+    } catch {}
+
+    if (isFirebaseConfigured() && db) {
+      this.setDocSafe(doc(db, 'publicPersonShares', token), projection).catch((err) => {
+        console.warn('Could not mirror public person share to Firestore:', err);
+      });
+    }
+
+    return token;
+  }
+
+  /**
+   * Fetches the read-only projection for a specific person by share token.
+   */
+  async getPublicPersonByToken(
+    shareToken: string
+  ): Promise<{ person: PersonRecord; transactions: PeerTransactionRecord[]; ownerName?: string } | null> {
+    // 1. Try local storage cache
+    try {
+      const local = localStorage.getItem(`eco_public_person_${shareToken}`);
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (parsed?.person) {
+          return {
+            person: parsed.person,
+            transactions: parsed.transactions || [],
+            ownerName: parsed.ownerName
+          };
+        }
+      }
+    } catch {}
+
+    // 2. Try decoding personId directly from token
+    const decodedPersonId = decodePersonShareToken(shareToken);
+    const targetId = decodedPersonId || shareToken;
+    const existingPerson = this.people.find(
+      (p) => p.id === targetId || p.shareToken === shareToken
+    );
+    if (existingPerson) {
+      const txs = this.transactions.filter((t: PeerTransactionRecord) => t.personId === existingPerson.id);
+      return {
+        person: existingPerson,
+        transactions: txs
+      };
+    }
+
+    // 3. Try Firestore publicPersonShares collection
+    if (isFirebaseConfigured() && db) {
+      try {
+        const snap = await getDoc(doc(db, 'publicPersonShares', shareToken));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data?.person) {
+            return {
+              person: data.person as PersonRecord,
+              transactions: (data.transactions || []) as PeerTransactionRecord[],
+              ownerName: data.ownerName
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch public person share from Firestore:', err);
       }
     }
 
