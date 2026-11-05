@@ -13,6 +13,14 @@ import {
   EcOProposal,
   IssueReport
 } from '../domain/types';
+import {
+  SmartSettlement,
+  SettlementMember,
+  SettlementExpense,
+  SettlementPayment,
+  SettlementRefund
+} from '../domain/settlementTypes';
+import { poishaToTaka } from '../domain/settlementEngine';
 import { createDefaultPaymentMethods, getDefaultCashMethodId } from '../domain/paymentMethods';
 import { SEVEN_DAYS_MS } from '../domain/dates';
 import { EcoBackupV1, migrateBackupV1ToDomain } from '../domain/backupV1';
@@ -61,6 +69,7 @@ export class HybridFirebaseRepository {
   private myConnectionCode: string = 'ECO-USER';
   private firstLaunchDone: boolean = false;
   private communityIssues: IssueReport[] = [];
+  private smartSettlements: SmartSettlement[] = [];
 
   constructor() {
     this.loadFromLocalStorageCache();
@@ -359,7 +368,8 @@ export class HybridFirebaseRepository {
               peopleSnap,
               transactionsSnap,
               sourcesSnap,
-              notifsSnap
+              notifsSnap,
+              settlementsSnap
             ] = await Promise.all([
               fetchSafe('paymentMethods'),
               fetchSafe('expenses'),
@@ -369,7 +379,8 @@ export class HybridFirebaseRepository {
               fetchSafe('people'),
               fetchSafe('transactions'),
               fetchSafe('sources'),
-              fetchSafe('notifications')
+              fetchSafe('notifications'),
+              fetchSafe('smartSettlements')
             ]);
 
             let loadedMethods: PaymentMethod[] = methodsSnap
@@ -456,6 +467,7 @@ export class HybridFirebaseRepository {
             if (transactionsSnap) this.transactions = transactionsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
             if (sourcesSnap) this.sources = sourcesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
             if (notifsSnap) this.notifications = notifsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+            if (settlementsSnap) this.smartSettlements = settlementsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
 
             // Save to local device cache for offline availability
             this.saveToLocalStorageCache('paymentMethods', this.paymentMethods);
@@ -467,6 +479,7 @@ export class HybridFirebaseRepository {
             this.saveToLocalStorageCache('transactions', this.transactions);
             this.saveToLocalStorageCache('sources', this.sources);
             this.saveToLocalStorageCache('notifications', this.notifications);
+            this.saveToLocalStorageCache('smartSettlements', this.smartSettlements);
           } catch (syncErr) {
             console.warn('[EcO Firestore] Could not pre-fetch subcollections:', syncErr);
           }
@@ -519,6 +532,7 @@ export class HybridFirebaseRepository {
     this.connections = [];
     this.proposals = [];
     this.dismissedMilestones = {};
+    this.smartSettlements = [];
     this.firstLaunchDone = false;
     this.notify();
   }
@@ -612,7 +626,8 @@ export class HybridFirebaseRepository {
       { name: 'people', target: 'people' },
       { name: 'transactions', target: 'transactions' },
       { name: 'sources', target: 'sources' },
-      { name: 'notifications', target: 'notifications' }
+      { name: 'notifications', target: 'notifications' },
+      { name: 'smartSettlements', target: 'smartSettlements' }
     ] as const;
 
     subcollections.forEach(({ name, target }) => {
@@ -823,6 +838,9 @@ export class HybridFirebaseRepository {
 
       const rawNotifications = localStorage.getItem(this.getStorageKey('notifications'));
       this.notifications = rawNotifications ? JSON.parse(rawNotifications) : [];
+
+      const rawSettlements = localStorage.getItem(this.getStorageKey('smartSettlements'));
+      this.smartSettlements = rawSettlements ? JSON.parse(rawSettlements) : [];
 
       const rawConnections = localStorage.getItem(this.getStorageKey('connections'));
       this.connections = rawConnections ? JSON.parse(rawConnections) : [];
@@ -1963,6 +1981,418 @@ export class HybridFirebaseRepository {
   }
 
   // ============================================================================
+  // SMART SETTLEMENT (GROUP EXPENSE SPLITTING & SETTLING)
+  // ============================================================================
+
+  getSmartSettlements(): SmartSettlement[] {
+    return [...this.smartSettlements].sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  getSmartSettlementById(id: string): SmartSettlement | undefined {
+    return this.smartSettlements.find((s) => s.id === id);
+  }
+
+  getNextSettlementSequentialNumber(): number {
+    let maxNum = 0;
+    for (const s of this.smartSettlements) {
+      if (s.sequentialNumber && s.sequentialNumber > maxNum) {
+        maxNum = s.sequentialNumber;
+      }
+      const match = s.name.match(/Settlement#(\d+)/i);
+      if (match && match[1]) {
+        const parsed = parseInt(match[1], 10);
+        if (!isNaN(parsed) && parsed > maxNum) {
+          maxNum = parsed;
+        }
+      }
+    }
+    const watermarkKey = this.getStorageKey('settlement_sequence_watermark');
+    const storedWatermark = parseInt(localStorage.getItem(watermarkKey) || '0', 10);
+    const nextVal = Math.max(maxNum, storedWatermark) + 1;
+    try {
+      localStorage.setItem(watermarkKey, String(nextVal));
+    } catch {}
+    return nextVal;
+  }
+
+  formatSettlementDefaultName(seqNumber?: number): string {
+    const num = seqNumber ?? this.getNextSettlementSequentialNumber();
+    return `Settlement#${String(num).padStart(2, '0')}`;
+  }
+
+  async saveSmartSettlement(settlement: SmartSettlement): Promise<void> {
+    const list = [...this.smartSettlements];
+    const index = list.findIndex((s) => s.id === settlement.id);
+    const updated = {
+      ...settlement,
+      updatedAt: Date.now()
+    };
+
+    if (index >= 0) {
+      list[index] = updated;
+    } else {
+      list.unshift(updated);
+    }
+
+    this.smartSettlements = list;
+    this.saveToLocalStorageCache('smartSettlements', list);
+
+    if (isFirebaseConfigured() && db && this.activeUserId) {
+      try {
+        await this.setDocSafe(
+          doc(db, 'users', this.activeUserId, 'smartSettlements', updated.id),
+          updated,
+          { merge: true }
+        );
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `users/${this.activeUserId}/smartSettlements/${updated.id}`);
+      }
+    }
+
+    if (updated.isPublicShared && updated.shareToken) {
+      await this.syncPublicSettlement(updated);
+    }
+
+    this.notify();
+  }
+
+  async deleteSmartSettlement(settlementId: string): Promise<void> {
+    const target = this.smartSettlements.find((s) => s.id === settlementId);
+    this.smartSettlements = this.smartSettlements.filter((s) => s.id !== settlementId);
+    this.saveToLocalStorageCache('smartSettlements', this.smartSettlements);
+
+    if (isFirebaseConfigured() && db && this.activeUserId) {
+      try {
+        await deleteDoc(doc(db, 'users', this.activeUserId, 'smartSettlements', settlementId));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `users/${this.activeUserId}/smartSettlements/${settlementId}`);
+      }
+    }
+
+    if (target?.shareToken) {
+      try {
+        localStorage.removeItem(`eco_public_settlement_${target.shareToken}`);
+        if (isFirebaseConfigured() && db) {
+          await deleteDoc(doc(db, 'publicSettlements', target.shareToken));
+        }
+      } catch {}
+    }
+
+    this.notify();
+  }
+
+  async archiveSmartSettlement(settlementId: string): Promise<void> {
+    const s = this.getSmartSettlementById(settlementId);
+    if (!s) return;
+    await this.saveSmartSettlement({ ...s, status: 'archived' });
+  }
+
+  async reopenSmartSettlement(settlementId: string): Promise<void> {
+    const s = this.getSmartSettlementById(settlementId);
+    if (!s) return;
+    await this.saveSmartSettlement({ ...s, status: 'active' });
+  }
+
+  async addSettlementExpense(
+    settlementId: string,
+    expense: SettlementExpense,
+    walletSync?: { walletId: string; rememberPreference?: boolean }
+  ): Promise<void> {
+    const settlement = this.getSmartSettlementById(settlementId);
+    if (!settlement) return;
+
+    const updatedExp = { ...expense };
+
+    const meMember = settlement.members.find((m) => m.isMe);
+    if (meMember && walletSync?.walletId) {
+      const mePaidPoisha = expense.payers.find((p) => p.memberId === meMember.id)?.amountPoisha || 0;
+      if (mePaidPoisha > 0) {
+        const walletExpenseRecord: ExpenseRecord = {
+          id: `exp_settle_${expense.id}`,
+          reason: expense.title,
+          category: 'Settlement',
+          description: `Smart Settlement: ${settlement.name} — ${expense.title}`,
+          amount: poishaToTaka(mePaidPoisha),
+          type: 'regular',
+          payMethodId: walletSync.walletId,
+          date: expense.date,
+          timestamp: Date.now()
+        };
+        await this.addExpense(walletExpenseRecord);
+        updatedExp.walletTransactionId = walletExpenseRecord.id;
+      }
+    }
+
+    const updatedSettlement: SmartSettlement = {
+      ...settlement,
+      expenses: [updatedExp, ...settlement.expenses],
+      autoWalletSyncPreference:
+        walletSync?.rememberPreference && walletSync.walletId
+          ? { enabled: true, walletId: walletSync.walletId }
+          : settlement.autoWalletSyncPreference
+    };
+
+    await this.saveSmartSettlement(updatedSettlement);
+  }
+
+  async updateSettlementExpense(
+    settlementId: string,
+    expense: SettlementExpense,
+    walletSync?: { walletId: string }
+  ): Promise<void> {
+    const settlement = this.getSmartSettlementById(settlementId);
+    if (!settlement) return;
+
+    const updatedExp = { ...expense };
+    const meMember = settlement.members.find((m) => m.isMe);
+
+    if (expense.walletTransactionId && meMember) {
+      const mePaidPoisha = expense.payers.find((p) => p.memberId === meMember.id)?.amountPoisha || 0;
+      const existingWalletExp = this.expenses.find((e) => e.id === expense.walletTransactionId);
+      if (existingWalletExp) {
+        if (mePaidPoisha > 0) {
+          await this.updateExpense({
+            ...existingWalletExp,
+            amount: poishaToTaka(mePaidPoisha),
+            description: `Smart Settlement: ${settlement.name} — ${expense.title}`,
+            date: expense.date,
+            payMethodId: walletSync?.walletId || existingWalletExp.payMethodId
+          });
+        } else {
+          await this.deleteExpense(existingWalletExp.id);
+          delete updatedExp.walletTransactionId;
+        }
+      }
+    } else if (meMember && walletSync?.walletId) {
+      const mePaidPoisha = expense.payers.find((p) => p.memberId === meMember.id)?.amountPoisha || 0;
+      if (mePaidPoisha > 0) {
+        const walletExpenseRecord: ExpenseRecord = {
+          id: `exp_settle_${expense.id}`,
+          reason: expense.title,
+          category: 'Settlement',
+          description: `Smart Settlement: ${settlement.name} — ${expense.title}`,
+          amount: poishaToTaka(mePaidPoisha),
+          type: 'regular',
+          payMethodId: walletSync.walletId,
+          date: expense.date,
+          timestamp: Date.now()
+        };
+        await this.addExpense(walletExpenseRecord);
+        updatedExp.walletTransactionId = walletExpenseRecord.id;
+      }
+    }
+
+    const expensesList = settlement.expenses.map((e) => (e.id === expense.id ? updatedExp : e));
+    await this.saveSmartSettlement({ ...settlement, expenses: expensesList });
+  }
+
+  async deleteSettlementExpense(
+    settlementId: string,
+    expenseId: string,
+    deleteLinkedWalletTx: boolean = true
+  ): Promise<void> {
+    const settlement = this.getSmartSettlementById(settlementId);
+    if (!settlement) return;
+
+    const targetExp = settlement.expenses.find((e) => e.id === expenseId);
+    if (targetExp?.walletTransactionId && deleteLinkedWalletTx) {
+      try {
+        await this.deleteExpense(targetExp.walletTransactionId);
+      } catch {}
+    }
+
+    const remainingRefunds = settlement.refunds.filter((r) => r.expenseId !== expenseId);
+    const remainingExpenses = settlement.expenses.filter((e) => e.id !== expenseId);
+
+    await this.saveSmartSettlement({
+      ...settlement,
+      expenses: remainingExpenses,
+      refunds: remainingRefunds
+    });
+  }
+
+  async recordSettlementPayment(
+    settlementId: string,
+    payment: SettlementPayment,
+    walletSync?: { walletId: string }
+  ): Promise<void> {
+    const settlement = this.getSmartSettlementById(settlementId);
+    if (!settlement) return;
+
+    const updatedPayment = { ...payment };
+    const meMember = settlement.members.find((m) => m.isMe);
+
+    if (meMember && walletSync?.walletId) {
+      const fromMember = settlement.members.find((m) => m.id === payment.fromMemberId);
+      const toMember = settlement.members.find((m) => m.id === payment.toMemberId);
+
+      if (payment.fromMemberId === meMember.id) {
+        const expRecord: ExpenseRecord = {
+          id: `exp_settle_pmt_${payment.id}`,
+          reason: 'Settlement Debt Payment',
+          category: 'Settlement',
+          description: `Smart Settlement: Paid ${toMember?.name || 'Member'} (${settlement.name})`,
+          amount: poishaToTaka(payment.amountPoisha),
+          type: 'regular',
+          payMethodId: walletSync.walletId,
+          date: payment.date,
+          timestamp: Date.now()
+        };
+        await this.addExpense(expRecord);
+        updatedPayment.walletTransactionId = expRecord.id;
+      } else if (payment.toMemberId === meMember.id) {
+        const earnRecord: EarningRecord = {
+          id: `earn_settle_pmt_${payment.id}`,
+          source: 'Settlement Payment',
+          description: `Smart Settlement: Received from ${fromMember?.name || 'Member'} (${settlement.name})`,
+          amount: poishaToTaka(payment.amountPoisha),
+          payMethodId: walletSync.walletId,
+          date: payment.date,
+          timestamp: Date.now()
+        };
+        await this.addEarning(earnRecord);
+        updatedPayment.walletTransactionId = earnRecord.id;
+      }
+    }
+
+    const updatedSettlement: SmartSettlement = {
+      ...settlement,
+      payments: [updatedPayment, ...settlement.payments]
+    };
+    await this.saveSmartSettlement(updatedSettlement);
+  }
+
+  async deleteSettlementPayment(
+    settlementId: string,
+    paymentId: string,
+    deleteLinkedWalletTx: boolean = true
+  ): Promise<void> {
+    const settlement = this.getSmartSettlementById(settlementId);
+    if (!settlement) return;
+
+    const targetPmt = settlement.payments.find((p) => p.id === paymentId);
+    if (targetPmt?.walletTransactionId && deleteLinkedWalletTx) {
+      try {
+        await this.deleteExpense(targetPmt.walletTransactionId);
+        await this.deleteEarning(targetPmt.walletTransactionId);
+      } catch {}
+    }
+
+    const remainingPayments = settlement.payments.filter((p) => p.id !== paymentId);
+    await this.saveSmartSettlement({ ...settlement, payments: remainingPayments });
+  }
+
+  async recordSettlementRefund(settlementId: string, refund: SettlementRefund): Promise<void> {
+    const settlement = this.getSmartSettlementById(settlementId);
+    if (!settlement) return;
+
+    const updatedSettlement: SmartSettlement = {
+      ...settlement,
+      refunds: [refund, ...settlement.refunds]
+    };
+    await this.saveSmartSettlement(updatedSettlement);
+  }
+
+  async deleteSettlementRefund(settlementId: string, refundId: string): Promise<void> {
+    const settlement = this.getSmartSettlementById(settlementId);
+    if (!settlement) return;
+
+    const remainingRefunds = settlement.refunds.filter((r) => r.id !== refundId);
+    await this.saveSmartSettlement({ ...settlement, refunds: remainingRefunds });
+  }
+
+  async toggleSettlementPublicShare(settlementId: string, enable: boolean): Promise<string | null> {
+    const settlement = this.getSmartSettlementById(settlementId);
+    if (!settlement) return null;
+
+    if (!enable) {
+      const token = settlement.shareToken;
+      const updated: SmartSettlement = {
+        ...settlement,
+        isPublicShared: false
+      };
+      await this.saveSmartSettlement(updated);
+      if (token) {
+        try {
+          localStorage.removeItem(`eco_public_settlement_${token}`);
+          if (isFirebaseConfigured() && db) {
+            await deleteDoc(doc(db, 'publicSettlements', token));
+          }
+        } catch {}
+      }
+      return null;
+    }
+
+    const token =
+      settlement.shareToken ||
+      `st_${Date.now()}_${Math.random().toString(36).substring(2, 9)}${Math.random().toString(36).substring(2, 9)}`;
+
+    const updated: SmartSettlement = {
+      ...settlement,
+      isPublicShared: true,
+      shareToken: token
+    };
+
+    await this.saveSmartSettlement(updated);
+    return token;
+  }
+
+  private async syncPublicSettlement(settlement: SmartSettlement): Promise<void> {
+    if (!settlement.shareToken || !settlement.isPublicShared) return;
+
+    const publicProjection = {
+      id: settlement.id,
+      name: settlement.name,
+      currencySymbol: settlement.currencySymbol || '৳',
+      createdAt: settlement.createdAt,
+      updatedAt: settlement.updatedAt,
+      status: settlement.status,
+      members: settlement.members.map((m) => ({ id: m.id, name: m.name, avatarUrl: m.avatarUrl || null })),
+      expenses: settlement.expenses,
+      payments: settlement.payments,
+      refunds: settlement.refunds,
+      shareToken: settlement.shareToken
+    };
+
+    try {
+      localStorage.setItem(`eco_public_settlement_${settlement.shareToken}`, JSON.stringify(publicProjection));
+    } catch {}
+
+    if (isFirebaseConfigured() && db) {
+      try {
+        await this.setDocSafe(doc(db, 'publicSettlements', settlement.shareToken), publicProjection);
+      } catch (err) {
+        console.warn('Could not mirror public settlement to Firestore:', err);
+      }
+    }
+  }
+
+  async getPublicSettlementByToken(shareToken: string): Promise<SmartSettlement | null> {
+    try {
+      const local = localStorage.getItem(`eco_public_settlement_${shareToken}`);
+      if (local) {
+        return JSON.parse(local) as SmartSettlement;
+      }
+    } catch {}
+
+    const existing = this.smartSettlements.find((s) => s.shareToken === shareToken && s.isPublicShared);
+    if (existing) return existing;
+
+    if (isFirebaseConfigured() && db) {
+      try {
+        const snap = await getDoc(doc(db, 'publicSettlements', shareToken));
+        if (snap.exists()) {
+          return snap.data() as SmartSettlement;
+        }
+      } catch (err) {
+        console.warn('Could not fetch public settlement from Firestore:', err);
+      }
+    }
+
+    return null;
+  }
+
+  // ============================================================================
   // BACKUP IMPORT & EXPORT (WITH IDEMPOTENCY / DEDUPLICATION)
   // ============================================================================
 
@@ -2008,7 +2438,8 @@ export class HybridFirebaseRepository {
         earnings: this.earnings.map((ea) => ({ id: ea.id, fields: { ...ea } })),
         transfers: this.transfers.map((t) => ({ id: t.id, fields: { ...t } })),
         transactions: this.transactions.map((tx) => ({ id: tx.id, fields: { ...tx } })),
-        sources: this.sources.map((s) => ({ id: s.id, fields: { ...s } }))
+        sources: this.sources.map((s) => ({ id: s.id, fields: { ...s } })),
+        smartSettlements: this.smartSettlements.map((s) => ({ id: s.id, fields: { ...s } }))
       },
       integrity: {
         complete: true,
@@ -2021,7 +2452,8 @@ export class HybridFirebaseRepository {
           earnings: this.earnings.length,
           transfers: this.transfers.length,
           transactions: this.transactions.length,
-          sources: this.sources.length
+          sources: this.sources.length,
+          smartSettlements: this.smartSettlements.length
         }
       }
     };
@@ -2163,7 +2595,8 @@ export class HybridFirebaseRepository {
           'people',
           'transactions',
           'sources',
-          'notifications'
+          'notifications',
+          'smartSettlements'
         ];
         for (const colName of collectionsToClean) {
           const snap = await getDocs(collection(db, 'users', this.activeUserId, colName));
@@ -2190,6 +2623,7 @@ export class HybridFirebaseRepository {
     this.people = [];
     this.transactions = [];
     this.notifications = [];
+    this.smartSettlements = [];
     this.paymentMethods = createDefaultPaymentMethods();
     this.firstLaunchDone = false;
 
@@ -2202,6 +2636,7 @@ export class HybridFirebaseRepository {
       'people',
       'transactions',
       'notifications',
+      'smartSettlements',
       'setupComplete'
     ];
     keys.forEach((k) => localStorage.removeItem(this.getStorageKey(k)));
