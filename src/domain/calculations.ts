@@ -11,6 +11,7 @@ import {
 } from './types';
 import { roundToTwoDecimals } from './money';
 import { getTodayDateString } from './dates';
+import { resolvePaymentMethod, isMethodActive } from './paymentMethods';
 
 export interface MethodBalanceBreakdown {
   methodId: string;
@@ -65,37 +66,20 @@ export function calculateFinancialSummary(
   });
 
   // Multi-key alias resolver so transactions with legacy IDs, names, or aliases match their wallet
-  const methodLookup = new Map<string, MethodBalanceBreakdown>();
-  methods.forEach((m) => {
-    const item = breakdownMap.get(m.id);
-    if (!item) return;
-    methodLookup.set(m.id, item);
-    methodLookup.set(m.id.toLowerCase(), item);
-    methodLookup.set(m.name.trim().toLowerCase(), item);
-    if (m.legacyNames) {
-      m.legacyNames.forEach((ln) => methodLookup.set(ln.trim().toLowerCase(), item));
-    }
-    if (m.type === 'cash') {
-      methodLookup.set('cash', item);
-    }
-    if (m.name.toLowerCase().includes('bkash')) {
-      methodLookup.set('bkash', item);
-    }
-    if (m.name.toLowerCase().includes('nagad')) {
-      methodLookup.set('nagad', item);
-    }
-  });
-
   const resolveItem = (payMethodId?: string): MethodBalanceBreakdown | undefined => {
     if (!payMethodId) return undefined;
     const direct = breakdownMap.get(payMethodId);
     if (direct) return direct;
+    const resolvedMethod = resolvePaymentMethod(payMethodId, methods);
+    if (resolvedMethod) {
+      return breakdownMap.get(resolvedMethod.id);
+    }
     const clean = payMethodId.trim().toLowerCase();
-    const lookup = methodLookup.get(clean);
-    if (lookup) return lookup;
-    if (clean.includes('cash')) return methodLookup.get('cash');
-    if (clean.includes('bkash')) return methodLookup.get('bkash');
-    if (clean.includes('nagad')) return methodLookup.get('nagad');
+    for (const [id, item] of breakdownMap.entries()) {
+      if (id.toLowerCase() === clean || item.name.toLowerCase() === clean) {
+        return item;
+      }
+    }
     return undefined;
   };
 
@@ -184,9 +168,9 @@ export function calculateFinancialSummary(
       item.peerGivenOut
     );
 
-    // Only active methods contribute to active liquid total
+    // Only active methods contribute to active liquid total (treat undefined as active)
     const methodObj = methods.find((m) => m.id === item.methodId);
-    if (methodObj && methodObj.isActive) {
+    if (!methodObj || isMethodActive(methodObj)) {
       liquidWalletTotal += item.currentBalance;
     }
     walletBalances.push(item);
