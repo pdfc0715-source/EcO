@@ -2,8 +2,17 @@ import { formatTaka } from './money';
 import { calculateFinancialSummary, calculateBudgetMetrics } from './calculations';
 import { resolveDuplicateMethodName } from './paymentMethods';
 import { validateEcoBackupV1, migrateBackupV1ToDomain, SAMPLE_ECO_BACKUP_V1 } from './backupV1';
-import { calculateRecurringEndDate } from './dates';
-import { PaymentMethod, PersonRecord, PeerTransactionRecord, ExpenseRecord, UserSettings, UnifiedActivityItem } from './types';
+import { calculateRecurringEndDate, formatExactDate, formatExactDateTime } from './dates';
+import {
+  PaymentMethod,
+  PersonRecord,
+  PeerTransactionRecord,
+  ExpenseRecord,
+  UserSettings,
+  UnifiedActivityItem,
+  encodePersonShareToken,
+  decodePersonShareToken
+} from './types';
 import {
   evaluateLoanMilestone,
   addCalendarMonths,
@@ -840,6 +849,27 @@ export function runAllRegressionTests(): TestResult[] {
     });
   } catch (e: any) {
     results.push({ name: 'Consolidated Multi-Expense Voucher Test', passed: false, error: e.message });
+  }
+
+  // Test 27: Person Share Token Distinctness & Exact Date Formatting
+  try {
+    const tokenA = encodePersonShareToken('person_rahim_101');
+    const tokenB = encodePersonShareToken('person_karim_202');
+    const tokensDifferent = tokenA !== tokenB;
+    const decodedA = decodePersonShareToken(tokenA);
+    const decodedB = decodePersonShareToken(tokenB);
+    const decodeCorrect = decodedA === 'person_rahim_101' && decodedB === 'person_karim_202';
+    const exactDate = formatExactDate('2026-11-05');
+    const dateNeverRelative = exactDate === '05 Nov 2026' && !exactDate.includes('Today');
+
+    results.push({
+      name: 'Person Share Token Distinctness & Exact Date Verification',
+      passed: tokensDifferent && decodeCorrect && dateNeverRelative,
+      actual: { tokenA, tokenB, decodedA, decodedB, exactDate },
+      expected: { decodedA: 'person_rahim_101', decodedB: 'person_karim_202', exactDate: '05 Nov 2026' }
+    });
+  } catch (e: any) {
+    results.push({ name: 'Person Share Token Distinctness Test', passed: false, error: e.message });
   }
 
   // Smart Settlement Engine Acceptance Tests
