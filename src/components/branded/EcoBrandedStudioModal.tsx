@@ -29,7 +29,7 @@ import {
   openPrintPdfWindow
 } from '../../domain/exportBrandedDocument';
 import { formatTaka } from '../../domain/money';
-import { formatDisplayDate } from '../../domain/dates';
+import { formatDisplayDate, formatExactDate, formatExactDateTime } from '../../domain/dates';
 
 interface MonthOptionItem {
   key: string;
@@ -214,11 +214,11 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
 
     ctx.font = '600 16px "Plus Jakarta Sans", sans-serif';
     ctx.fillStyle = isDark ? '#73E3B4' : '#059669';
-    ctx.fillText(`Created: ${data.createdDate || formatDisplayDate(data.date)}`, width - margin - 50, topY + 68);
+    ctx.fillText(`Created: ${data.createdDate || formatExactDateTime(data.date, data.timestamp)}`, width - margin - 50, topY + 68);
 
     ctx.font = '500 15px "Plus Jakarta Sans", sans-serif';
     ctx.fillStyle = isDark ? '#87948C' : '#64748B';
-    ctx.fillText(`Tx Date: ${formatDisplayDate(data.date)}`, width - margin - 50, topY + 92);
+    ctx.fillText(`Tx Date: ${formatExactDate(data.date)}`, width - margin - 50, topY + 92);
 
     // Horizontal Divider
     ctx.strokeStyle = isDark ? '#282A2E' : '#E2E8F0';
@@ -259,7 +259,7 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
 
     ctx.fillStyle = isDark ? '#BCCAC1' : '#475569';
     ctx.font = '500 20px "Plus Jakarta Sans", sans-serif';
-    ctx.fillText(`${data.walletName} · ${formatDisplayDate(data.date)}`, width / 2, heroY + 195);
+    ctx.fillText(`${data.walletName} · ${formatExactDate(data.date)}`, width / 2, heroY + 195);
     ctx.restore();
 
     // --- Perforated Receipt Line ---
@@ -281,7 +281,7 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
     const rows = [
       { label: 'Voucher Title', value: effectiveTitle },
       { label: 'Reference Number', value: data.referenceId, isMono: true },
-      { label: 'Date & Time', value: `${formatDisplayDate(data.date)} · ${data.timestamp}` },
+      { label: 'Date & Time', value: `${formatExactDate(data.date)} · ${data.timestamp}` },
       { label: 'From', value: data.fromParty },
       { label: 'To', value: data.toParty },
       { label: 'Category', value: data.categoryOrSource || data.title },
@@ -509,7 +509,7 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
 
       // Date
       ctx.font = '500 14px "JetBrains Mono", monospace';
-      ctx.fillText(formatDisplayDate(item.date), margin + 890, curY + 38);
+      ctx.fillText(formatExactDate(item.date), margin + 890, curY + 38);
 
       // Amount
       ctx.textAlign = 'right';
@@ -1154,7 +1154,7 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
         `• From: ${voucherData.fromParty}\n` +
         `• To: ${voucherData.toParty}\n` +
         `• Wallet: ${voucherData.walletName}\n` +
-        `• Date: ${formatDisplayDate(voucherData.date)}\n` +
+        `• Date: ${formatExactDate(voucherData.date)} · ${voucherData.timestamp}\n` +
         (voucherData.note ? `• Note: ${voucherData.note}\n` : '') +
         `\nTracked with EcO (https://eco-du.vercel.app/)`;
     } else if (mode === 'person-statement' && statementData) {
@@ -1246,7 +1246,7 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
                     className="w-full py-2 px-3 rounded-lg bg-[#0C0E12] border border-[#3D4943]/50 text-[#E2E2E8] text-xs font-semibold outline-none focus:border-[#73E3B4] transition-colors"
                   />
                   <span className="text-[10px] text-[#87948C] mt-1 block">
-                    Created: {mode === 'multi-voucher' ? multiVoucherData?.createdDate : (voucherData?.createdDate || formatDisplayDate(voucherData?.date || ''))}
+                    Created: {mode === 'multi-voucher' ? multiVoucherData?.createdDate : (voucherData?.createdDate || formatExactDateTime(voucherData?.date || '', voucherData?.timestamp))}
                   </span>
                 </div>
               )}
