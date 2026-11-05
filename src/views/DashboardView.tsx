@@ -72,6 +72,7 @@ interface DashboardViewProps {
   onNavigateToList: () => void;
   onNavigateToWallets: () => void;
   onNavigateToPeople: () => void;
+  onNavigateToSettlements?: () => void;
   onNavigateToSettings?: () => void;
   onOpenAddModal: () => void;
   onOpenAddWithKind?: (kind: 'expense' | 'earning' | 'transfer' | 'give' | 'take') => void;
@@ -103,6 +104,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateToList,
   onNavigateToWallets,
   onNavigateToPeople,
+  onNavigateToSettlements,
   onNavigateToSettings,
   onOpenAddModal,
   onOpenAddWithKind,
@@ -544,7 +546,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-[#3D4943]/20 flex items-center justify-between">
+          <div className="mt-4 pt-3 border-t border-[#3D4943]/20 flex flex-wrap items-center justify-between gap-2">
             <button
               type="button"
               onClick={onNavigateToWallets}
@@ -553,14 +555,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span>Manage Wallets</span>
               <ArrowRight className="w-3 h-3" />
             </button>
-            <button
-              type="button"
-              onClick={onNavigateToPeople}
-              className="text-xs text-[#87948C] hover:text-[#E2E2E8] hover:underline flex items-center gap-1 cursor-pointer"
-            >
-              <span>Personal Loans</span>
-              <ArrowRight className="w-3 h-3" />
-            </button>
+            <div className="flex items-center gap-3">
+              {onNavigateToSettlements && (
+                <button
+                  type="button"
+                  onClick={onNavigateToSettlements}
+                  className="text-xs text-[#73E3B4] hover:underline flex items-center gap-1 cursor-pointer font-medium"
+                >
+                  <span>Smart Settlement</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onNavigateToPeople}
+                className="text-xs text-[#87948C] hover:text-[#E2E2E8] hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <span>Loans</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
