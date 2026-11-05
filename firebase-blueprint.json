@@ -305,6 +305,14 @@
       "schema": "OpeningBalances",
       "description": "User opening balance records"
     },
+    "/users/{userId}/settlements/{settlementId}": {
+      "schema": "SmartSettlement",
+      "description": "User Smart Settlement group expense and debt resolution sessions"
+    },
+    "/publicSettlements/{shareToken}": {
+      "schema": "SmartSettlement",
+      "description": "Read-only public projection of shared settlements"
+    },
     "/communityIssues/{issueId}": {
       "schema": "CommunityIssue",
       "description": "Public community problems, bug reports, and suggestions with public upvotes and downvotes"
