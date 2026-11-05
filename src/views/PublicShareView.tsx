@@ -1,22 +1,97 @@
-import React from 'react';
-import { ShieldCheck, ArrowLeft, ArrowUpRight, ArrowDownRight, User, FileText } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShieldCheck, ArrowLeft, ArrowUpRight, ArrowDownRight, User, FileText, AlertCircle, Loader2 } from 'lucide-react';
 import { PersonRecord, PeerTransactionRecord } from '../domain/types';
 import { formatTaka } from '../domain/money';
-import { formatDisplayDate } from '../domain/dates';
+import { formatExactDate } from '../domain/dates';
+import { repository } from '../data/repository';
 
 interface PublicShareViewProps {
-  person: PersonRecord;
-  transactions: PeerTransactionRecord[];
+  shareToken?: string;
+  person?: PersonRecord;
+  transactions?: PeerTransactionRecord[];
   onExit: () => void;
   onOpenBrandedStatement?: (person: PersonRecord, transactions: PeerTransactionRecord[]) => void;
 }
 
 export const PublicShareView: React.FC<PublicShareViewProps> = ({
-  person,
-  transactions,
+  shareToken,
+  person: initialPerson,
+  transactions: initialTransactions,
   onExit,
   onOpenBrandedStatement
 }) => {
+  const [person, setPerson] = useState<PersonRecord | null>(initialPerson || null);
+  const [transactions, setTransactions] = useState<PeerTransactionRecord[]>(initialTransactions || []);
+  const [isLoading, setIsLoading] = useState<boolean>(!initialPerson && Boolean(shareToken));
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialPerson) {
+      setPerson(initialPerson);
+      setTransactions(initialTransactions || []);
+      setIsLoading(false);
+      return;
+    }
+
+    if (!shareToken) {
+      setError('No share token provided.');
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    repository
+      .getPublicPersonByToken(shareToken)
+      .then((data) => {
+        if (data && data.person) {
+          setPerson(data.person);
+          setTransactions(data.transactions || []);
+        } else {
+          setError('This shared ledger could not be found or may have expired.');
+        }
+      })
+      .catch((err) => {
+        console.error('Error fetching shared ledger:', err);
+        setError('Failed to load shared ledger details.');
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [shareToken, initialPerson, initialTransactions]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#111317] text-[#E2E2E8] p-4 flex flex-col items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-[#73E3B4] animate-spin" />
+          <span className="text-xs text-[#BCCAC1]">Loading shared ledger...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !person) {
+    return (
+      <div className="min-h-screen bg-[#111317] text-[#E2E2E8] p-4 sm:p-6 flex flex-col items-center justify-center">
+        <div className="w-full max-w-md bg-[#1A1C20] border border-[#3D4943]/40 rounded-2xl p-6 text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-amber-400 flex items-center justify-center mx-auto">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-[#E2E2E8]">Shared Ledger Unavailable</h3>
+            <p className="text-xs text-[#87948C] mt-1.5">{error || 'This ledger could not be found.'}</p>
+          </div>
+          <button
+            onClick={onExit}
+            className="px-4 py-2 rounded-xl bg-[#55C79A] hover:bg-[#73E3B4] text-[#003826] font-semibold text-xs transition-colors cursor-pointer"
+          >
+            Go to EcO App
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Calculate balance from counterparty perspective
   // For owner: 'give' = owner gave to person (person owes owner +amount)
   // For counterparty: person received from owner (counterparty owes owner +amount)
@@ -120,7 +195,7 @@ export const PublicShareView: React.FC<PublicShareViewProps> = ({
                         {counterpartyReceived ? 'Received Funds' : 'Returned / Sent Funds'}
                       </div>
                       <div className="text-[11px] text-[#87948C] mt-0.5">
-                        {formatDisplayDate(tx.date)} {tx.description ? `· ${tx.description}` : ''}
+                        {formatExactDate(tx.date)} {tx.description ? `· ${tx.description}` : ''}
                       </div>
                     </div>
                   </div>
