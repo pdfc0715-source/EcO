@@ -340,7 +340,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
 
   const handleOpenShareModal = (p: PersonRecord) => {
     const token = onGenerateShareLink(p.id);
-    const fullUrl = `${window.location.origin}/?share=${token}`;
+    const fullUrl = `${window.location.origin}${window.location.pathname}?share=${token}`;
     setShareLinkPerson(p);
     setGeneratedShareUrl(fullUrl);
     setCopiedShareUrl(false);
@@ -1350,7 +1350,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
                 >
                   {paymentMethods.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.name} ({formatTaka(m.balance || 0)})
+                      {m.name}
                     </option>
                   ))}
                 </select>
@@ -1522,7 +1522,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
               >
                 {paymentMethods.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name} ({formatTaka(m.balance || 0)})
+                    {m.name}
                   </option>
                 ))}
               </select>
