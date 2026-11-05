@@ -4,7 +4,7 @@
  */
 
 import { formatTaka } from './money';
-import { formatDisplayDate } from './dates';
+import { formatDisplayDate, formatExactDate, formatExactDateTime } from './dates';
 import {
   UnifiedActivityItem,
   PersonRecord,
@@ -155,7 +155,7 @@ export function buildVoucherData(
   const isRepayment = rawTx?.tag?.toLowerCase().includes('repay') || item.title.toLowerCase().includes('repay');
 
   const now = new Date();
-  const createdDate = `${formatDisplayDate(now.toISOString().split('T')[0])}, ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  const createdDate = formatExactDateTime(now.toISOString().split('T')[0], now.getTime());
 
   return {
     referenceId: generateVerificationReference('TX', item.id),
@@ -188,7 +188,7 @@ export function buildMultiVoucherData(
   customTitle?: string
 ): BrandedMultiVoucherData {
   const now = new Date();
-  const createdDate = `${formatDisplayDate(now.toISOString().split('T')[0])}, ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  const createdDate = formatExactDateTime(now.toISOString().split('T')[0], now.getTime());
 
   const voucherItems: BrandedMultiVoucherItem[] = items.map((item) => {
     const method = paymentMethods.find((m) => m.id === item.payMethodId);
@@ -228,10 +228,10 @@ export function buildMultiVoucherData(
   // Date range
   const dates = Array.from(new Set(voucherItems.map((it) => it.date))).sort();
   const dateRange = dates.length === 0
-    ? formatDisplayDate(now.toISOString().split('T')[0])
+    ? formatExactDate(now.toISOString().split('T')[0])
     : dates.length === 1
-    ? formatDisplayDate(dates[0])
-    : `${formatDisplayDate(dates[0])} – ${formatDisplayDate(dates[dates.length - 1])}`;
+    ? formatExactDate(dates[0])
+    : `${formatExactDate(dates[0])} – ${formatExactDate(dates[dates.length - 1])}`;
 
   // Smart default title
   let defaultTitle = 'Market Expense Voucher';
