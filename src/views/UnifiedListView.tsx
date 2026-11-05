@@ -31,7 +31,7 @@ import {
   PeerTransactionRecord
 } from '../domain/types';
 import { formatTaka } from '../domain/money';
-import { formatDisplayDate } from '../domain/dates';
+import { formatDisplayDate, formatExactDateTime } from '../domain/dates';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { EditActivityModal } from '../components/EditActivityModal';
 
@@ -933,8 +933,8 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
             {/* Field Breakdown List */}
             <div className="divide-y divide-[#3D4943]/20 text-xs">
               <div className="py-2 flex items-center justify-between">
-                <span className="text-[#87948C]">Date</span>
-                <span className="font-mono text-[#E2E2E8]">{formatDisplayDate(detailItem.date)}</span>
+                <span className="text-[#87948C]">Date & Time</span>
+                <span className="font-mono text-[#E2E2E8]">{formatExactDateTime(detailItem.date, detailItem.timestamp)}</span>
               </div>
 
               <div className="py-2 flex items-center justify-between">
