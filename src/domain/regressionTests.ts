@@ -3,7 +3,7 @@ import { calculateFinancialSummary, calculateBudgetMetrics } from './calculation
 import { resolveDuplicateMethodName } from './paymentMethods';
 import { validateEcoBackupV1, migrateBackupV1ToDomain, SAMPLE_ECO_BACKUP_V1 } from './backupV1';
 import { calculateRecurringEndDate } from './dates';
-import { PaymentMethod, PersonRecord, PeerTransactionRecord, ExpenseRecord, UserSettings } from './types';
+import { PaymentMethod, PersonRecord, PeerTransactionRecord, ExpenseRecord, UserSettings, UnifiedActivityItem } from './types';
 import {
   evaluateLoanMilestone,
   addCalendarMonths,
@@ -15,6 +15,8 @@ import {
 } from './milestones';
 import { invertProposalDirection, validateConnectionCode } from './connections';
 import { getRecent24Months, computeStatsOverview, computeMonthHeatmap } from './statistics';
+import { buildMultiVoucherData } from './exportBrandedDocument';
+import { runAllSettlementTests } from './settlementTests';
 
 export interface TestResult {
   name: string;
@@ -755,6 +757,96 @@ export function runAllRegressionTests(): TestResult[] {
     });
   } catch (e: any) {
     results.push({ name: 'Universal Account Balance Calculation Test', passed: false, error: e.message });
+  }
+
+  // Test 26: Consolidated Multi-Expense Voucher Generation & Calculation
+  try {
+    const testMethods: PaymentMethod[] = [
+      { id: 'm_cash', name: 'Cash', type: 'cash', isBuiltIn: true, isActive: true, balance: 5000, openingBalance: 5000, createdAt: '', updatedAt: '' },
+      { id: 'm_bkash', name: 'bKash', type: 'mobile_money', isBuiltIn: false, isActive: true, balance: 2000, openingBalance: 2000, createdAt: '', updatedAt: '' }
+    ];
+
+    const testActivities: UnifiedActivityItem[] = [
+      {
+        id: 'item_1',
+        activityType: 'expense',
+        title: 'Fish & Prawns',
+        categoryOrSourceOrPerson: 'Bazaar',
+        amount: 850,
+        payMethodId: 'm_cash',
+        date: '2026-11-04',
+        timestamp: 1000
+      },
+      {
+        id: 'item_2',
+        activityType: 'expense',
+        title: 'Vegetables & Spices',
+        categoryOrSourceOrPerson: 'Bazaar',
+        amount: 320,
+        payMethodId: 'm_cash',
+        date: '2026-11-04',
+        timestamp: 1010
+      },
+      {
+        id: 'item_3',
+        activityType: 'expense',
+        title: 'Supermarket Groceries',
+        categoryOrSourceOrPerson: 'Groceries',
+        amount: 1450,
+        payMethodId: 'm_bkash',
+        date: '2026-11-04',
+        timestamp: 1020
+      }
+    ];
+
+    const multiData = buildMultiVoucherData(
+      testActivities,
+      testMethods,
+      [],
+      'Fardin Hossain',
+      'Kitchen Market Bazaar'
+    );
+
+    const totalPassed = multiData.totalAmount === 2620;
+    const countPassed = multiData.totalCount === 3;
+    const titlePassed = multiData.customTitle === 'Kitchen Market Bazaar';
+    const dateCreatedPassed = Boolean(multiData.createdDate && multiData.createdDate.length > 5);
+    const cashWallet = multiData.walletBreakdown.find((w) => w.walletName === 'Cash');
+    const bkashWallet = multiData.walletBreakdown.find((w) => w.walletName === 'bKash');
+    const walletsPassed = cashWallet?.amount === 1170 && bkashWallet?.amount === 1450;
+    const refPassed = multiData.referenceId.startsWith('ECO-TX-');
+
+    const passed = totalPassed && countPassed && titlePassed && dateCreatedPassed && walletsPassed && refPassed;
+
+    results.push({
+      name: 'Consolidated Multi-Expense Voucher (Total ৳2,620, Count 3, Custom Title & Created Date)',
+      passed,
+      actual: {
+        totalAmount: multiData.totalAmount,
+        totalCount: multiData.totalCount,
+        customTitle: multiData.customTitle,
+        hasCreatedDate: Boolean(multiData.createdDate),
+        cashAmount: cashWallet?.amount,
+        bkashAmount: bkashWallet?.amount
+      },
+      expected: {
+        totalAmount: 2620,
+        totalCount: 3,
+        customTitle: 'Kitchen Market Bazaar',
+        hasCreatedDate: true,
+        cashAmount: 1170,
+        bkashAmount: 1450
+      }
+    });
+  } catch (e: any) {
+    results.push({ name: 'Consolidated Multi-Expense Voucher Test', passed: false, error: e.message });
+  }
+
+  // Smart Settlement Engine Acceptance Tests
+  try {
+    results.push(...runAllSettlementTests());
+  } catch (e: any) {
+    results.push({ name: 'Smart Settlement Test Suite', passed: false, error: e.message });
   }
 
   return results;
