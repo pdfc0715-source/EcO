@@ -390,11 +390,21 @@ export class HybridFirebaseRepository {
               : [];
 
             if (loadedMethods.length === 0) {
-              loadedMethods = createDefaultPaymentMethods();
+              loadedMethods = this.paymentMethods.length > 0 ? [...this.paymentMethods] : createDefaultPaymentMethods();
               for (const m of loadedMethods) {
                 await this.setDocSafe(doc(db, 'users', userId, 'paymentMethods', m.id), m);
               }
             } else {
+              // Merge any custom/bank methods that were already in this.paymentMethods (from local cache or guest mode)
+              for (const localM of this.paymentMethods) {
+                const inLoaded = loadedMethods.find(
+                  (m) => m.id === localM.id || m.name.toLowerCase().trim() === localM.name.toLowerCase().trim()
+                );
+                if (!inLoaded) {
+                  await this.setDocSafe(doc(db, 'users', userId, 'paymentMethods', localM.id), localM);
+                  loadedMethods.push(localM);
+                }
+              }
               // Ensure core wallets (Cash, bKash, Nagad) exist
               const coreDefaults = createDefaultPaymentMethods();
               for (const def of coreDefaults) {
@@ -421,6 +431,40 @@ export class HybridFirebaseRepository {
             } catch {}
 
             let changed = false;
+
+            // Discover and instantiate any extra bank/custom wallets recorded in openingBalances
+            if (ob) {
+              for (const [key, val] of Object.entries(ob)) {
+                if (['cash', 'bkash', 'nagad', 'date', 'id', 'createdAt', 'timestamp', 'updatedAt'].includes(key.toLowerCase())) continue;
+                if (typeof val === 'number') {
+                  const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+                  const exists = loadedMethods.some(
+                    (m) =>
+                      m.id.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanKey) ||
+                      m.name.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanKey)
+                  );
+                  if (!exists && cleanKey) {
+                    const customName = key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase()).trim();
+                    const newCustomMethod: PaymentMethod = {
+                      id: `method_${cleanKey}_migrated`,
+                      name: customName,
+                      type: customName.toLowerCase().includes('bank') ? 'bank' : 'mobile_money',
+                      isBuiltIn: false,
+                      isActive: true,
+                      balance: val,
+                      openingBalance: val,
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                      legacyNames: [key, customName]
+                    };
+                    loadedMethods.push(newCustomMethod);
+                    await this.setDocSafe(doc(db, 'users', userId, 'paymentMethods', newCustomMethod.id), newCustomMethod);
+                    changed = true;
+                  }
+                }
+              }
+            }
+
             loadedMethods = loadedMethods.map((m) => {
               const nameLower = m.name.toLowerCase().trim();
               let targetOpening = m.openingBalance || 0;
@@ -639,8 +683,18 @@ export class HybridFirebaseRepository {
           colRef,
           (snapshot) => {
             const items = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as any[];
-            if (target === 'paymentMethods' && items.length === 0 && this.paymentMethods.length > 0) {
-              return; // Avoid transient empty wipe
+            if (target === 'paymentMethods') {
+              if (items.length === 0 && this.paymentMethods.length > 0) {
+                return; // Avoid transient empty wipe
+              }
+              const methodMap = new Map<string, PaymentMethod>();
+              this.paymentMethods.forEach((m) => methodMap.set(m.id, m));
+              items.forEach((m) => methodMap.set(m.id, { ...methodMap.get(m.id), ...m }));
+              const merged = Array.from(methodMap.values());
+              this.paymentMethods = merged;
+              this.saveToLocalStorageCache('paymentMethods', merged);
+              this.notify();
+              return;
             }
             (this as any)[target] = items;
             this.saveToLocalStorageCache(target, items);
@@ -1047,6 +1101,7 @@ export class HybridFirebaseRepository {
     const index = list.findIndex((m) => m.id === method.id);
     const updated = {
       ...method,
+      isActive: method.isActive !== false,
       updatedAt: new Date().toISOString()
     };
 
