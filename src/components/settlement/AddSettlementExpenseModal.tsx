@@ -694,7 +694,7 @@ export const AddSettlementExpenseModal: React.FC<AddSettlementExpenseModalProps>
                   >
                     {wallets.map((w) => (
                       <option key={w.id} value={w.id}>
-                        {w.name} (৳{w.balance.toLocaleString()})
+                        {w.name}
                       </option>
                     ))}
                   </select>
