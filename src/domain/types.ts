@@ -93,6 +93,7 @@ export interface PersonRecord {
   isConnected: boolean;
   connectionCode?: string;
   connectedUserId?: string;
+  shareToken?: string;
   createdAt: string;
 }
 
@@ -232,6 +233,48 @@ export interface IssueReport {
   dislikedBy?: string[];
   screenshot?: string;
   createdAt: number;
+}
+
+/**
+ * Encodes a personId into a distinct, URL-safe share token.
+ */
+export function encodePersonShareToken(personId: string): string {
+  try {
+    const raw = `eco:person:${personId}`;
+    const base64 = typeof btoa !== 'undefined'
+      ? btoa(raw)
+      : Buffer.from(raw).toString('base64');
+    return 'ps_' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  } catch {
+    return 'ps_' + encodeURIComponent(personId);
+  }
+}
+
+/**
+ * Decodes a share token to extract the target personId.
+ */
+export function decodePersonShareToken(token: string): string | null {
+  if (!token) return null;
+  if (token.startsWith('ps_')) {
+    const body = token.substring(3);
+    try {
+      let base64 = body.replace(/-/g, '+').replace(/_/g, '/');
+      while (base64.length % 4 !== 0) {
+        base64 += '=';
+      }
+      const decoded = typeof atob !== 'undefined'
+        ? atob(base64)
+        : Buffer.from(base64, 'base64').toString('utf8');
+      if (decoded.startsWith('eco:person:')) {
+        return decoded.substring('eco:person:'.length);
+      }
+    } catch {
+      try {
+        return decodeURIComponent(body);
+      } catch {}
+    }
+  }
+  return null;
 }
 
 
