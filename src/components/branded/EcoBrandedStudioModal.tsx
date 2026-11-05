@@ -20,6 +20,7 @@ import {
   StudioTheme,
   StudioPalette,
   BrandedVoucherData,
+  BrandedMultiVoucherData,
   BrandedStatementData,
   BrandedMonthlyCardData,
   getPaletteColors,
@@ -41,6 +42,7 @@ interface EcoBrandedStudioModalProps {
   isOpen: boolean;
   mode: BrandedStudioMode;
   voucherData?: BrandedVoucherData | null;
+  multiVoucherData?: BrandedMultiVoucherData | null;
   statementData?: BrandedStatementData | null;
   monthlyCardData?: BrandedMonthlyCardData | null;
   availableMonths?: MonthOptionItem[];
@@ -56,6 +58,7 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
   isOpen,
   mode,
   voucherData,
+  multiVoucherData,
   statementData,
   monthlyCardData,
   availableMonths = [],
@@ -71,6 +74,7 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
   const [aspectRatio, setAspectRatio] = useState<'card' | 'story'>('card');
   const [copied, setCopied] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [customTitle, setCustomTitle] = useState<string>('');
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -79,8 +83,13 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
       setTheme(initialTheme);
       setPalette(initialPalette);
       setCopied(false);
+      if (mode === 'multi-voucher' && multiVoucherData) {
+        setCustomTitle(multiVoucherData.customTitle || 'Market Expense Voucher');
+      } else if (mode === 'voucher' && voucherData) {
+        setCustomTitle(voucherData.title || 'EcO Voucher');
+      }
     }
-  }, [isOpen, initialTheme, initialPalette]);
+  }, [isOpen, mode, initialTheme, initialPalette, multiVoucherData, voucherData]);
 
   const paletteColors = useMemo(() => getPaletteColors(palette), [palette]);
 
@@ -98,13 +107,15 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
     const primaryColor = paletteColors.accent;
 
     if (mode === 'voucher' && voucherData) {
-      renderVoucherCanvas(ctx, canvas, voucherData, isDark, primaryColor);
+      renderVoucherCanvas(ctx, canvas, voucherData, isDark, primaryColor, customTitle);
+    } else if (mode === 'multi-voucher' && multiVoucherData) {
+      renderMultiVoucherCanvas(ctx, canvas, multiVoucherData, isDark, primaryColor, customTitle);
     } else if (mode === 'person-statement' && statementData) {
       renderStatementCanvas(ctx, canvas, statementData, isDark, primaryColor);
     } else if (mode === 'monthly-card' && monthlyCardData) {
       renderMonthlyCardCanvas(ctx, canvas, monthlyCardData, isDark, primaryColor, aspectRatio);
     }
-  }, [isOpen, mode, voucherData, statementData, monthlyCardData, theme, palette, aspectRatio, paletteColors]);
+  }, [isOpen, mode, voucherData, multiVoucherData, statementData, monthlyCardData, customTitle, theme, palette, aspectRatio, paletteColors]);
 
   // --- Real QR Code Renderer (redirects to https://eco-du.vercel.app/) ---
   function drawRealQrCode(
@@ -154,7 +165,8 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
     canvas: HTMLCanvasElement,
     data: BrandedVoucherData,
     isDark: boolean,
-    accent: string
+    accent: string,
+    titleToUse?: string
   ) => {
     const width = 1080;
     const height = 1460;
@@ -194,20 +206,26 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
     ctx.font = 'bold 42px "Plus Jakarta Sans", sans-serif';
     ctx.fillText('EcO', margin + 115, topY + 56);
 
-    // Reference (Top Right)
+    // Reference & Automatic Created Date (Top Right)
     ctx.textAlign = 'right';
     ctx.fillStyle = isDark ? '#87948C' : '#64748B';
     ctx.font = 'bold 20px "JetBrains Mono", monospace';
-    ctx.fillText(data.referenceId, width - margin - 50, topY + 45);
-    ctx.font = '500 18px "Plus Jakarta Sans", sans-serif';
-    ctx.fillText(formatDisplayDate(data.date), width - margin - 50, topY + 75);
+    ctx.fillText(data.referenceId, width - margin - 50, topY + 40);
+
+    ctx.font = '600 16px "Plus Jakarta Sans", sans-serif';
+    ctx.fillStyle = isDark ? '#73E3B4' : '#059669';
+    ctx.fillText(`Created: ${data.createdDate || formatDisplayDate(data.date)}`, width - margin - 50, topY + 68);
+
+    ctx.font = '500 15px "Plus Jakarta Sans", sans-serif';
+    ctx.fillStyle = isDark ? '#87948C' : '#64748B';
+    ctx.fillText(`Tx Date: ${formatDisplayDate(data.date)}`, width - margin - 50, topY + 92);
 
     // Horizontal Divider
     ctx.strokeStyle = isDark ? '#282A2E' : '#E2E8F0';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(margin + 50, topY + 110);
-    ctx.lineTo(width - margin - 50, topY + 110);
+    ctx.moveTo(margin + 50, topY + 115);
+    ctx.lineTo(width - margin - 50, topY + 115);
     ctx.stroke();
 
     // --- Hero Amount Box ---
@@ -259,7 +277,9 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
     // --- Key Details Rows ---
     const tableY = tearY + 45;
     const rowH = 68;
+    const effectiveTitle = (titleToUse || data.title).trim();
     const rows = [
+      { label: 'Voucher Title', value: effectiveTitle },
       { label: 'Reference Number', value: data.referenceId, isMono: true },
       { label: 'Date & Time', value: `${formatDisplayDate(data.date)} · ${data.timestamp}` },
       { label: 'From', value: data.fromParty },
@@ -315,6 +335,237 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
     ctx.fillStyle = isDark ? '#FFFFFF' : '#0F172A';
     ctx.font = 'bold 28px "Plus Jakarta Sans", sans-serif';
     ctx.fillText('Tracked with EcO', margin + 60 + qrSize + 25, footerY + qrSize / 2 + 10);
+  };
+
+  // --- 1.5 Consolidated Multi-Voucher Canvas Renderer ---
+  const renderMultiVoucherCanvas = (
+    ctx: CanvasRenderingContext2D,
+    canvas: HTMLCanvasElement,
+    data: BrandedMultiVoucherData,
+    isDark: boolean,
+    accent: string,
+    titleToUse?: string
+  ) => {
+    const width = 1200;
+    const itemRowH = 64;
+    const minHeight = 1480;
+    const calculatedHeight = 920 + data.items.length * itemRowH;
+    const height = Math.max(minHeight, calculatedHeight);
+
+    canvas.width = width;
+    canvas.height = height;
+
+    // Background
+    ctx.fillStyle = isDark ? '#111317' : '#F8FAFC';
+    ctx.fillRect(0, 0, width, height);
+
+    // Outer subtle card
+    const margin = 50;
+    const cardW = width - margin * 2;
+    const cardH = height - margin * 2;
+    const radius = 28;
+
+    ctx.save();
+    ctx.fillStyle = isDark ? '#1A1C20' : '#FFFFFF';
+    ctx.strokeStyle = isDark ? '#282A2E' : '#E2E8F0';
+    ctx.lineWidth = 3;
+    drawRoundedRect(ctx, margin, margin, cardW, cardH, radius);
+    ctx.fill();
+    ctx.stroke();
+
+    // Top decorative bar
+    ctx.fillStyle = accent;
+    drawTopRoundedRect(ctx, margin, margin, cardW, 14, radius);
+    ctx.fill();
+    ctx.restore();
+
+    // Header Section: EcO emblem + Title
+    const topY = margin + 50;
+    drawEcoEmblem(ctx, margin + 50, topY + 45, 45, accent, isDark);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = isDark ? '#FFFFFF' : '#0F172A';
+    ctx.font = 'bold 36px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText('EcO', margin + 115, topY + 45);
+
+    // Prominent Title Display (e.g. "Kitchen Market Bazaar", "Groceries")
+    const displayTitle = (titleToUse || data.customTitle || 'Consolidated Voucher').trim();
+    ctx.fillStyle = accent;
+    ctx.font = 'bold 24px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText(displayTitle, margin + 115, topY + 80);
+
+    // Reference & Automatic Created Date (Top Right)
+    ctx.textAlign = 'right';
+    ctx.fillStyle = isDark ? '#87948C' : '#64748B';
+    ctx.font = 'bold 20px "JetBrains Mono", monospace';
+    ctx.fillText(data.referenceId, width - margin - 50, topY + 38);
+
+    ctx.font = '600 16px "Plus Jakarta Sans", sans-serif';
+    ctx.fillStyle = isDark ? '#73E3B4' : '#059669';
+    ctx.fillText(`Created: ${data.createdDate}`, width - margin - 50, topY + 68);
+
+    ctx.font = '500 15px "Plus Jakarta Sans", sans-serif';
+    ctx.fillStyle = isDark ? '#87948C' : '#64748B';
+    ctx.fillText(`Date Range: ${data.dateRange}`, width - margin - 50, topY + 95);
+
+    // Divider
+    ctx.strokeStyle = isDark ? '#282A2E' : '#E2E8F0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(margin + 50, topY + 125);
+    ctx.lineTo(width - margin - 50, topY + 125);
+    ctx.stroke();
+
+    // Hero Consolidated Total Box
+    const heroY = topY + 150;
+    const heroH = 200;
+
+    ctx.save();
+    ctx.fillStyle = isDark ? '#0C0E12' : '#F1F5F9';
+    ctx.strokeStyle = isDark ? '#282A2E' : '#CBD5E1';
+    ctx.lineWidth = 2;
+    drawRoundedRect(ctx, margin + 50, heroY, cardW - 100, heroH, 24);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = isDark ? '#87948C' : '#64748B';
+    ctx.font = 'bold 16px "Plus Jakarta Sans", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`CONSOLIDATED EXPENDITURE · ${data.totalCount} ${data.totalCount === 1 ? 'ITEM' : 'ITEMS'}`, width / 2, heroY + 42);
+
+    ctx.fillStyle = isDark ? '#FFFFFF' : '#0F172A';
+    ctx.font = 'bold 60px "JetBrains Mono", monospace';
+    ctx.fillText(formatTaka(data.totalAmount), width / 2, heroY + 115);
+
+    // Wallets breakdown line
+    const walletText = data.walletBreakdown && data.walletBreakdown.length > 0
+      ? data.walletBreakdown.map((w) => `${w.walletName}: ${formatTaka(w.amount)}`).join('  ·  ')
+      : `Ledger by ${data.userName}`;
+    ctx.fillStyle = isDark ? '#BCCAC1' : '#475569';
+    ctx.font = '500 18px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText(walletText, width / 2, heroY + 165);
+    ctx.restore();
+
+    // Perforated line
+    const tearY = heroY + heroH + 30;
+    ctx.save();
+    ctx.strokeStyle = isDark ? '#3D4943' : '#CBD5E1';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([12, 10]);
+    ctx.beginPath();
+    ctx.moveTo(margin + 50, tearY);
+    ctx.lineTo(width - margin - 50, tearY);
+    ctx.stroke();
+    ctx.restore();
+
+    // Table Header
+    const tableY = tearY + 30;
+    ctx.fillStyle = isDark ? '#0C0E12' : '#F1F5F9';
+    ctx.fillRect(margin + 50, tableY, cardW - 100, 48);
+
+    ctx.fillStyle = isDark ? '#87948C' : '#475569';
+    ctx.font = 'bold 15px "Plus Jakarta Sans", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('#', margin + 70, tableY + 30);
+    ctx.fillText('ITEM / REASON', margin + 115, tableY + 30);
+    ctx.fillText('CATEGORY', margin + 490, tableY + 30);
+    ctx.fillText('WALLET', margin + 720, tableY + 30);
+    ctx.fillText('DATE', margin + 890, tableY + 30);
+    ctx.textAlign = 'right';
+    ctx.fillText('AMOUNT', width - margin - 75, tableY + 30);
+
+    // Items list
+    data.items.forEach((item, idx) => {
+      const curY = tableY + 48 + idx * itemRowH;
+      ctx.fillStyle = idx % 2 === 0 ? (isDark ? '#1E2024' : '#FFFFFF') : (isDark ? '#16181C' : '#F8FAFC');
+      ctx.fillRect(margin + 50, curY, cardW - 100, itemRowH);
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = isDark ? '#87948C' : '#64748B';
+      ctx.font = '500 16px "JetBrains Mono", monospace';
+      ctx.fillText(String(idx + 1).padStart(2, '0'), margin + 70, curY + 38);
+
+      // Item title
+      ctx.fillStyle = isDark ? '#E2E2E8' : '#0F172A';
+      ctx.font = 'bold 17px "Plus Jakarta Sans", sans-serif';
+      let titleTxt = item.title;
+      if (ctx.measureText(titleTxt).width > 350) {
+        while (ctx.measureText(titleTxt + '...').width > 350 && titleTxt.length > 4) {
+          titleTxt = titleTxt.slice(0, -1);
+        }
+        titleTxt += '...';
+      }
+      ctx.fillText(titleTxt, margin + 115, curY + 38);
+
+      // Category
+      ctx.fillStyle = isDark ? '#BCCAC1' : '#475569';
+      ctx.font = '500 15px "Plus Jakarta Sans", sans-serif';
+      ctx.fillText(item.category, margin + 490, curY + 38);
+
+      // Wallet
+      ctx.fillStyle = isDark ? '#87948C' : '#64748B';
+      ctx.font = '500 15px "Plus Jakarta Sans", sans-serif';
+      ctx.fillText(item.walletName, margin + 720, curY + 38);
+
+      // Date
+      ctx.font = '500 14px "JetBrains Mono", monospace';
+      ctx.fillText(formatDisplayDate(item.date), margin + 890, curY + 38);
+
+      // Amount
+      ctx.textAlign = 'right';
+      ctx.fillStyle = item.activityType === 'earning' ? '#10B981' : isDark ? '#FFB4AB' : '#DC2626';
+      ctx.font = 'bold 18px "JetBrains Mono", monospace';
+      ctx.fillText(formatTaka(item.amount), width - margin - 75, curY + 38);
+
+      // Row divider line
+      ctx.strokeStyle = isDark ? '#23252A' : '#F1F5F9';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(margin + 50, curY + itemRowH);
+      ctx.lineTo(width - margin - 50, curY + itemRowH);
+      ctx.stroke();
+    });
+
+    // Total Summary Row
+    const tableBottomY = tableY + 48 + data.items.length * itemRowH;
+    ctx.fillStyle = isDark ? '#0C0E12' : '#E2E8F0';
+    ctx.fillRect(margin + 50, tableBottomY, cardW - 100, 54);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = isDark ? '#E2E2E8' : '#0F172A';
+    ctx.font = 'bold 18px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText('TOTAL EXPENDITURE', margin + 70, tableBottomY + 34);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = accent;
+    ctx.font = 'bold 22px "JetBrains Mono", monospace';
+    ctx.fillText(formatTaka(data.totalAmount), width - margin - 75, tableBottomY + 34);
+
+    // Perforated line before footer
+    const finalTearY = tableBottomY + 75;
+    ctx.save();
+    ctx.strokeStyle = isDark ? '#3D4943' : '#CBD5E1';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([12, 10]);
+    ctx.beginPath();
+    ctx.moveTo(margin + 50, finalTearY);
+    ctx.lineTo(width - margin - 50, finalTearY);
+    ctx.stroke();
+    ctx.restore();
+
+    // Footer with Real QR code + Just 'Tracked with EcO'
+    const footerY = height - margin - 135;
+    const qrSize = 105;
+    drawRealQrCode(ctx, margin + 60, footerY, qrSize, 'https://eco-du.vercel.app/');
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = isDark ? '#FFFFFF' : '#0F172A';
+    ctx.font = 'bold 28px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText('Tracked with EcO', margin + 60 + qrSize + 25, footerY + 45);
+
+    ctx.fillStyle = isDark ? '#87948C' : '#64748B';
+    ctx.font = '500 16px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText(`Consolidated Expense Ledger Voucher · Created: ${data.createdDate}`, margin + 60 + qrSize + 25, footerY + 80);
   };
 
   // --- 2. Person Statement Canvas Renderer ---
@@ -780,8 +1031,11 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
     if (!canvas) return;
 
     let filename = 'eco-export.png';
-    if (mode === 'voucher' && voucherData) {
-      filename = `eco-voucher-${voucherData.referenceId}.png`;
+    const cleanTitle = (customTitle || 'voucher').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+    if (mode === 'multi-voucher' && multiVoucherData) {
+      filename = `eco-consolidated-${cleanTitle}-${multiVoucherData.referenceId}.png`;
+    } else if (mode === 'voucher' && voucherData) {
+      filename = `eco-voucher-${cleanTitle}-${voucherData.referenceId}.png`;
     } else if (mode === 'person-statement' && statementData) {
       filename = `eco-statement-${statementData.counterpartyName.toLowerCase().replace(/\s+/g, '-')}-${statementData.referenceId}.png`;
     } else if (mode === 'monthly-card' && monthlyCardData) {
@@ -815,8 +1069,10 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
     const imgData = canvas.toDataURL('image/png');
 
     let title = 'EcO Document';
-    if (mode === 'voucher' && voucherData) {
-      title = `EcO — ${voucherData.referenceId}`;
+    if (mode === 'multi-voucher' && multiVoucherData) {
+      title = `${customTitle || multiVoucherData.customTitle} — ${multiVoucherData.referenceId}`;
+    } else if (mode === 'voucher' && voucherData) {
+      title = `${customTitle || voucherData.title} — ${voucherData.referenceId}`;
     } else if (mode === 'person-statement' && statementData) {
       title = `EcO — ${statementData.counterpartyName}`;
     } else if (mode === 'monthly-card' && monthlyCardData) {
@@ -880,9 +1136,20 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
 
   const handleShareToWhatsApp = () => {
     let text = '';
-    if (mode === 'voucher' && voucherData) {
-      text = `*EcO — Voucher*\n\n` +
+    if (mode === 'multi-voucher' && multiVoucherData) {
+      const itemsList = multiVoucherData.items.map((it, idx) => `${idx + 1}. ${it.title} — ${formatTaka(it.amount)} (${it.category})`).join('\n');
+      text = `*EcO — ${customTitle || multiVoucherData.customTitle}*\n\n` +
+        `• Ref: ${multiVoucherData.referenceId}\n` +
+        `• Created: ${multiVoucherData.createdDate}\n` +
+        `• Total Spent: ${formatTaka(multiVoucherData.totalAmount)}\n` +
+        `• Total Items: ${multiVoucherData.totalCount}\n` +
+        `• Date Range: ${multiVoucherData.dateRange}\n\n` +
+        `*Itemized List:*\n${itemsList}\n\n` +
+        `Tracked with EcO (https://eco-du.vercel.app/)`;
+    } else if (mode === 'voucher' && voucherData) {
+      text = `*EcO — ${customTitle || voucherData.title}*\n\n` +
         `• Ref: ${voucherData.referenceId}\n` +
+        `• Created: ${voucherData.createdDate || voucherData.date}\n` +
         `• Amount: ${formatTaka(voucherData.amount)}\n` +
         `• From: ${voucherData.fromParty}\n` +
         `• To: ${voucherData.toParty}\n` +
@@ -934,6 +1201,7 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
               Ec
             </div>
             <h2 className="text-sm font-bold text-[#E2E2E8]">
+              {mode === 'multi-voucher' && 'EcO Consolidated Voucher'}
               {mode === 'voucher' && 'EcO Voucher'}
               {mode === 'person-statement' && 'EcO Statement'}
               {mode === 'monthly-card' && 'EcO Monthly'}
@@ -964,6 +1232,25 @@ export const EcoBrandedStudioModal: React.FC<EcoBrandedStudioModalProps> = ({
           {/* Right Styling & Export Controls Panel */}
           <div className="w-full md:w-76 bg-[#1A1C20] border-t md:border-t-0 md:border-l border-[#3D4943]/40 p-4 sm:p-5 flex flex-col justify-between space-y-4 overflow-y-auto">
             <div className="space-y-4">
+              {/* Modifiable Title Input for Vouchers */}
+              {(mode === 'voucher' || mode === 'multi-voucher') && (
+                <div>
+                  <label className="text-xs font-semibold text-[#BCCAC1] uppercase tracking-wider block mb-1.5">
+                    Voucher Title
+                  </label>
+                  <input
+                    type="text"
+                    value={customTitle}
+                    onChange={(e) => setCustomTitle(e.target.value)}
+                    placeholder="e.g. Kitchen Market Bazaar, Groceries"
+                    className="w-full py-2 px-3 rounded-lg bg-[#0C0E12] border border-[#3D4943]/50 text-[#E2E2E8] text-xs font-semibold outline-none focus:border-[#73E3B4] transition-colors"
+                  />
+                  <span className="text-[10px] text-[#87948C] mt-1 block">
+                    Created: {mode === 'multi-voucher' ? multiVoucherData?.createdDate : (voucherData?.createdDate || formatDisplayDate(voucherData?.date || ''))}
+                  </span>
+                </div>
+              )}
+
               {/* Month Selector for Monthly Card mode */}
               {mode === 'monthly-card' && availableMonths && availableMonths.length > 0 && (
                 <div>
