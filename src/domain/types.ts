@@ -146,7 +146,7 @@ export interface UnifiedActivityItem {
   activityType: 'expense' | 'earning' | 'transfer' | 'transaction' | 'recurring';
   title: string;
   categoryOrSourceOrPerson: string;
-  description: string;
+  description?: string;
   amount: number;
   netEffectText?: string;
   payMethodId?: string;
@@ -157,7 +157,7 @@ export interface UnifiedActivityItem {
   timestamp: number;
   status?: string;
   feeAmount?: number;
-  rawRecord: ExpenseRecord | EarningRecord | TransferRecord | PeerTransactionRecord | RecurringExpenseRecord;
+  rawRecord?: ExpenseRecord | EarningRecord | TransferRecord | PeerTransactionRecord | RecurringExpenseRecord;
 }
 
 export type ConnectionStatus = 'connected' | 'pending_incoming' | 'pending_outgoing' | 'rejected' | 'disconnected';
