@@ -24,7 +24,10 @@ import {
   AlertTriangle,
   Pencil,
   Trash2,
-  FileText
+  FileText,
+  Building,
+  CreditCard,
+  Smartphone
 } from 'lucide-react';
 import {
   FinancialSummary,
@@ -48,6 +51,7 @@ import { EditActivityModal } from '../components/EditActivityModal';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { formatTaka } from '../domain/money';
 import { formatDisplayDate, formatExactDateTime, getTodayDateString } from '../domain/dates';
+import { resolvePaymentMethod, isMethodActive } from '../domain/paymentMethods';
 import {
   computeDashboardLoanReminders,
   LoanMilestoneReminderItem,
@@ -222,7 +226,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     setWhatsAppModalItem(null);
   };
 
-  const activeWallets = paymentMethods.filter((m) => m.isActive);
+  const activeWallets = useMemo(() => {
+    return paymentMethods.filter((m) => isMethodActive(m));
+  }, [paymentMethods]);
+
+  const activeWalletBalances = useMemo(() => {
+    return summary.walletBalances.filter((wallet) => {
+      const methodObj = resolvePaymentMethod(wallet.methodId, paymentMethods);
+      return methodObj ? isMethodActive(methodObj) : true;
+    });
+  }, [summary.walletBalances, paymentMethods]);
+
+  const getWalletIcon = (type?: string) => {
+    switch (type) {
+      case 'bank':
+        return <Building className="w-3.5 h-3.5 text-[#73E3B4]" />;
+      case 'credit_card':
+        return <CreditCard className="w-3.5 h-3.5 text-[#73E3B4]" />;
+      case 'mobile_money':
+        return <Smartphone className="w-3.5 h-3.5 text-[#73E3B4]" />;
+      default:
+        return <Wallet className="w-3.5 h-3.5 text-[#73E3B4]" />;
+    }
+  };
 
   return (
     <div className="space-y-6 pb-28 lg:pb-12 animate-in fade-in duration-150">
@@ -726,24 +752,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {summary.walletBalances.slice(0, 4).map((wallet) => (
-            <div
-              key={wallet.methodId}
-              onClick={onNavigateToWallets}
-              className="p-3.5 rounded-xl bg-[#1A1C20] border border-[#3D4943]/40 hover:border-[#73E3B4]/40 cursor-pointer transition-colors shadow-sm"
-            >
-              <div className="flex items-center gap-1.5">
-                <Wallet className="w-3.5 h-3.5 text-[#87948C]" />
-                <span className="text-xs font-medium text-[#BCCAC1] truncate">
-                  {wallet.name}
-                </span>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          {activeWalletBalances.map((wallet) => {
+            const methodObj = resolvePaymentMethod(wallet.methodId, paymentMethods);
+            return (
+              <div
+                key={wallet.methodId}
+                onClick={onNavigateToWallets}
+                className="p-3.5 rounded-xl bg-[#1A1C20] border border-[#3D4943]/40 hover:border-[#73E3B4]/60 cursor-pointer transition-all shadow-sm group hover:-translate-y-0.5"
+              >
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {getWalletIcon(methodObj?.type)}
+                    <span className="text-xs font-semibold text-[#BCCAC1] group-hover:text-[#E2E2E8] transition-colors truncate">
+                      {wallet.name}
+                    </span>
+                  </div>
+                  {methodObj && (
+                    <span className="text-[9px] uppercase tracking-wider text-[#87948C] font-mono px-1 py-0.5 rounded bg-[#0C0E12] shrink-0">
+                      {methodObj.type === 'mobile_money' ? 'MFS' : methodObj.type}
+                    </span>
+                  )}
+                </div>
+                <div className="text-base font-mono tabular-nums font-bold text-[#E2E2E8] mt-2">
+                  {formatTaka(wallet.currentBalance)}
+                </div>
               </div>
-              <div className="text-base font-mono tabular-nums font-bold text-[#E2E2E8] mt-1.5">
-                {formatTaka(wallet.currentBalance)}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -853,37 +889,51 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               No transactions match this category. Tap "+ Record Entry" to log a transaction.
             </div>
           ) : (
-            filteredRecentActivities.slice(0, 8).map((item) => (
-              <div
-                key={item.id}
-                onClick={() => setDetailItem(item)}
-                className="p-3.5 flex items-center justify-between hover:bg-[#1E2024]/60 transition-colors cursor-pointer group"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="p-2 rounded-lg bg-[#0C0E12] text-[#87948C] shrink-0 border border-[#3D4943]/20">
-                    {item.activityType === 'expense' && <TrendingDown className="w-4 h-4 text-[#FFB4AB]" />}
-                    {item.activityType === 'earning' && <TrendingUp className="w-4 h-4 text-[#73E3B4]" />}
-                    {item.activityType === 'transfer' && <ArrowRightLeft className="w-4 h-4 text-[#BEC7D5]" />}
-                    {item.activityType === 'transaction' && <Users2 className="w-4 h-4 text-[#73E3B4]" />}
-                    {item.activityType === 'recurring' && <Layers className="w-4 h-4 text-[#BEC7D5]" />}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold text-[#E2E2E8] group-hover:text-[#73E3B4] transition-colors truncate">
-                      {item.title}
+            filteredRecentActivities.slice(0, 10).map((item) => {
+              const methodObj = resolvePaymentMethod(item.payMethodId, paymentMethods);
+              const fromObj = item.fromMethodId ? resolvePaymentMethod(item.fromMethodId, paymentMethods) : null;
+              const toObj = item.toMethodId ? resolvePaymentMethod(item.toMethodId, paymentMethods) : null;
+              const walletLabel = item.activityType === 'transfer'
+                ? `${fromObj?.name || 'Account'} → ${toObj?.name || 'Account'}`
+                : methodObj?.name;
+
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => setDetailItem(item)}
+                  className="p-3.5 flex items-center justify-between hover:bg-[#1E2024]/60 transition-colors cursor-pointer group"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="p-2 rounded-lg bg-[#0C0E12] text-[#87948C] shrink-0 border border-[#3D4943]/20">
+                      {item.activityType === 'expense' && <TrendingDown className="w-4 h-4 text-[#FFB4AB]" />}
+                      {item.activityType === 'earning' && <TrendingUp className="w-4 h-4 text-[#73E3B4]" />}
+                      {item.activityType === 'transfer' && <ArrowRightLeft className="w-4 h-4 text-[#BEC7D5]" />}
+                      {item.activityType === 'transaction' && <Users2 className="w-4 h-4 text-[#73E3B4]" />}
+                      {item.activityType === 'recurring' && <Layers className="w-4 h-4 text-[#BEC7D5]" />}
                     </div>
-                    <div className="text-[11px] text-[#87948C] mt-0.5 truncate flex items-center gap-1.5">
-                      <span className="font-mono text-[10px] text-[#BCCAC1]">
-                        {formatDisplayDate(item.date)}
-                      </span>
-                      {item.categoryOrSourceOrPerson && (
-                        <>
-                          <span>·</span>
-                          <span className="capitalize">{item.categoryOrSourceOrPerson}</span>
-                        </>
-                      )}
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-[#E2E2E8] group-hover:text-[#73E3B4] transition-colors truncate">
+                        {item.title}
+                      </div>
+                      <div className="text-[11px] text-[#87948C] mt-0.5 truncate flex items-center gap-1.5">
+                        <span className="font-mono text-[10px] text-[#BCCAC1]">
+                          {formatDisplayDate(item.date)}
+                        </span>
+                        {item.categoryOrSourceOrPerson && (
+                          <>
+                            <span>·</span>
+                            <span className="capitalize">{item.categoryOrSourceOrPerson}</span>
+                          </>
+                        )}
+                        {walletLabel && (
+                          <>
+                            <span>·</span>
+                            <span className="text-[#87948C]">{walletLabel}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
 
                 <div className="flex items-center gap-2.5 shrink-0 ml-3">
                   <div className="text-right">
@@ -920,8 +970,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <ChevronRight className="w-4 h-4 text-[#87948C] group-hover:text-[#E2E2E8] transition-colors" />
                 </div>
               </div>
-            ))
-          )}
+            );
+          })
+        )}
         </div>
       </section>
 
@@ -1212,13 +1263,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <span className="text-[#87948C]">Category / Party</span>
                 <span className="font-medium text-[#E2E2E8]">{detailItem.categoryOrSourceOrPerson}</span>
               </div>
-              {detailItem.payMethodId && (
-                <div className="py-2 flex items-center justify-between">
-                  <span className="text-[#87948C]">Wallet</span>
-                  <span className="text-[#73E3B4] font-medium">
-                    {paymentMethods.find((m) => m.id === detailItem.payMethodId)?.name || 'Account'}
-                  </span>
-                </div>
+              {detailItem.activityType === 'transfer' ? (
+                <>
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-[#87948C]">From Wallet</span>
+                    <span className="text-[#E2E2E8] font-medium">
+                      {resolvePaymentMethod(detailItem.fromMethodId, paymentMethods)?.name || 'Source'}
+                    </span>
+                  </div>
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-[#87948C]">To Wallet</span>
+                    <span className="text-[#73E3B4] font-medium">
+                      {resolvePaymentMethod(detailItem.toMethodId, paymentMethods)?.name || 'Destination'}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                detailItem.payMethodId && (
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-[#87948C]">Wallet</span>
+                    <span className="text-[#73E3B4] font-medium">
+                      {resolvePaymentMethod(detailItem.payMethodId, paymentMethods)?.name || 'Account'}
+                    </span>
+                  </div>
+                )
               )}
               {detailItem.description && (
                 <div className="py-2 space-y-1">
