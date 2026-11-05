@@ -99,13 +99,86 @@ export function resolveMethodByLegacyName(
   methods: PaymentMethod[]
 ): PaymentMethod | undefined {
   if (!legacyName) return undefined;
-  const clean = legacyName.trim().toLowerCase();
+  return resolvePaymentMethod(legacyName, methods);
+}
 
-  return methods.find((m) => {
-    if (m.name.trim().toLowerCase() === clean) return true;
-    if (m.legacyNames && m.legacyNames.some((l) => l.trim().toLowerCase() === clean)) return true;
-    return false;
+/**
+ * Robust, universal payment method resolver that matches any ID, name,
+ * legacy name, or case-insensitive alias.
+ */
+export function resolvePaymentMethod(
+  identifier: string | undefined | null,
+  methods: PaymentMethod[]
+): PaymentMethod | undefined {
+  if (!identifier || !methods || methods.length === 0) return undefined;
+  const str = String(identifier).trim();
+  if (!str) return undefined;
+  const lower = str.toLowerCase();
+  const alpha = lower.replace(/[^a-z0-9]/g, '');
+
+  // 1. Exact ID match
+  const byId = methods.find((m) => m.id === str);
+  if (byId) return byId;
+
+  // 2. Case-insensitive ID match
+  const byIdLower = methods.find((m) => m.id.toLowerCase() === lower);
+  if (byIdLower) return byIdLower;
+
+  // 3. Exact Name match (case-insensitive)
+  const byName = methods.find((m) => m.name.trim().toLowerCase() === lower);
+  if (byName) return byName;
+
+  // 4. Normalized alphanumeric match on name or ID
+  if (alpha) {
+    const byAlpha = methods.find(
+      (m) =>
+        m.name.toLowerCase().replace(/[^a-z0-9]/g, '') === alpha ||
+        m.id.toLowerCase().replace(/[^a-z0-9]/g, '') === alpha
+    );
+    if (byAlpha) return byAlpha;
+  }
+
+  // 5. Legacy names match
+  const byLegacy = methods.find(
+    (m) =>
+      m.legacyNames &&
+      m.legacyNames.some((ln) => {
+        const cleanLn = ln.trim().toLowerCase();
+        return cleanLn === lower || (alpha && cleanLn.replace(/[^a-z0-9]/g, '') === alpha);
+      })
+  );
+  if (byLegacy) return byLegacy;
+
+  // 6. Substring match for common terms (Cash, bKash, Nagad, or specific Bank name)
+  if (lower.includes('cash')) {
+    const cash = methods.find((m) => m.type === 'cash' || m.name.toLowerCase().includes('cash'));
+    if (cash) return cash;
+  }
+  if (lower.includes('bkash')) {
+    const bk = methods.find((m) => m.name.toLowerCase().includes('bkash'));
+    if (bk) return bk;
+  }
+  if (lower.includes('nagad')) {
+    const ng = methods.find((m) => m.name.toLowerCase().includes('nagad'));
+    if (ng) return ng;
+  }
+
+  // 7. General substring match
+  const bySub = methods.find((m) => {
+    const mLower = m.name.toLowerCase();
+    return (mLower.length >= 3 && lower.includes(mLower)) || (lower.length >= 3 && mLower.includes(lower));
   });
+  if (bySub) return bySub;
+
+  return undefined;
+}
+
+/**
+ * Returns true if a method is active (isActive is true or not explicitly false).
+ */
+export function isMethodActive(method?: PaymentMethod | null): boolean {
+  if (!method) return false;
+  return method.isActive !== false;
 }
 
 /**
@@ -128,3 +201,4 @@ export function getDefaultCashMethodId(methods: PaymentMethod[] = []): string {
   const method = getDefaultCashMethod(methods);
   return method?.id || BUILTIN_CASH_ID;
 }
+
