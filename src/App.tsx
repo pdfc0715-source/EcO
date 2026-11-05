@@ -630,25 +630,15 @@ export default function App() {
 
   // Share link generator for a person
   const handleGenerateShareLink = (personId: string): string => {
-    // Generate secure deterministic token based on personId
-    return btoa(`person_${personId}_${Date.now()}`).substring(0, 24);
+    return repository.generateAndSyncPersonShare(personId, user?.displayName || 'EcO User');
   };
 
   // If a public share token is present in URL, render the read-only projection
   if (sharedPersonToken) {
-    const sharedPerson = people[0] || {
-      id: 'shared_person',
-      name: 'Counterparty Account',
-      isConnected: false,
-      createdAt: ''
-    };
-    const sharedTxs = transactions.filter((t) => t.personId === sharedPerson.id);
-
     return (
       <>
         <PublicShareView
-          person={sharedPerson}
-          transactions={sharedTxs}
+          shareToken={sharedPersonToken}
           onOpenBrandedStatement={handleOpenStatementStudio}
           onExit={() => {
             window.history.replaceState({}, '', window.location.pathname);
