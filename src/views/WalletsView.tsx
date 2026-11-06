@@ -50,16 +50,29 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   // New method form state
   const [nameInput, setNameInput] = useState<string>('');
   const [typeInput, setTypeInput] = useState<PaymentMethodType>('bank');
+  const [targetBalanceStr, setTargetBalanceStr] = useState<string>('0');
   const [openingBalanceStr, setOpeningBalanceStr] = useState<string>('0');
+  const [balanceEditMode, setBalanceEditMode] = useState<'target' | 'opening'>('target');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const activeMethods = paymentMethods.filter((m) => m.isActive);
+
+  // Find breakdown for editing method to know its net transaction activity
+  const editingBreakdown = editingMethod
+    ? summary.walletBalances.find((w) => w.methodId === editingMethod.id)
+    : null;
+
+  const editingNetActivity = editingBreakdown
+    ? Math.round((editingBreakdown.currentBalance - editingBreakdown.openingBalance) * 100) / 100
+    : 0;
 
   const handleOpenAdd = () => {
     setErrorMsg(null);
     setNameInput('');
     setTypeInput('bank');
+    setTargetBalanceStr('0');
     setOpeningBalanceStr('0');
+    setBalanceEditMode('opening');
     setEditingMethod(null);
     setShowAddModal(true);
   };
@@ -68,7 +81,13 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
     setErrorMsg(null);
     setNameInput(m.name);
     setTypeInput(m.type);
+
+    const breakdown = summary.walletBalances.find((w) => w.methodId === m.id);
+    const currentBal = breakdown ? breakdown.currentBalance : (m.openingBalance || 0);
+
+    setTargetBalanceStr(String(currentBal));
     setOpeningBalanceStr(String(m.openingBalance || 0));
+    setBalanceEditMode('target');
     setEditingMethod(m);
     setShowAddModal(true);
   };
@@ -86,20 +105,33 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
       return;
     }
 
-    const opening = parseFloat(openingBalanceStr) || 0;
-
     if (editingMethod) {
       // Editing existing method
       const resolvedName = resolveDuplicateMethodName(trimmed, paymentMethods, editingMethod.id);
+      let finalOpeningBalance = 0;
+      let finalCurrentBalance = 0;
+
+      if (balanceEditMode === 'target') {
+        const targetVal = parseFloat(targetBalanceStr) || 0;
+        // Calibrate openingBalance so that: openingBalance + netActivity = targetVal
+        finalOpeningBalance = Math.round((targetVal - editingNetActivity) * 100) / 100;
+        finalCurrentBalance = targetVal;
+      } else {
+        finalOpeningBalance = parseFloat(openingBalanceStr) || 0;
+        finalCurrentBalance = Math.round((finalOpeningBalance + editingNetActivity) * 100) / 100;
+      }
+
       onSaveMethod({
         ...editingMethod,
         name: resolvedName,
         type: typeInput,
-        openingBalance: opening,
+        balance: finalCurrentBalance,
+        openingBalance: finalOpeningBalance,
         updatedAt: new Date().toISOString()
       });
     } else {
       // Creating new method
+      const opening = parseFloat(openingBalanceStr) || 0;
       const resolvedName = resolveDuplicateMethodName(trimmed, paymentMethods);
       const newMethod: PaymentMethod = {
         id: `method_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -461,21 +493,99 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                 </select>
               </div>
 
-              <div>
-                <label className="block text-[11px] text-[#BCCAC1] uppercase tracking-wider mb-1">
-                  Opening Balance (৳)
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={openingBalanceStr}
-                  onChange={(e) => setOpeningBalanceStr(e.target.value)}
-                  className="w-full py-2 px-3 rounded-lg bg-[#0C0E12] border border-[#3D4943]/50 text-xs text-[#E2E2E8] font-mono tabular-nums outline-none focus:border-[#73E3B4]"
-                />
-                <span className="text-[10px] text-[#87948C] mt-1 block">
-                  Starting funds present in this account before logging transactions.
-                </span>
-              </div>
+              {editingMethod ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] text-[#BCCAC1] uppercase tracking-wider mb-1">
+                      Wallet Current Balance (৳)
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={targetBalanceStr}
+                      onChange={(e) => {
+                        setTargetBalanceStr(e.target.value);
+                        setBalanceEditMode('target');
+                      }}
+                      className="w-full py-2 px-3 rounded-lg bg-[#0C0E12] border border-[#3D4943]/50 text-xs text-[#E2E2E8] font-mono tabular-nums outline-none focus:border-[#73E3B4]"
+                    />
+                    <div className="text-[10px] text-[#87948C] mt-1 space-y-0.5">
+                      <div>
+                        This wallet will display exactly{' '}
+                        <strong className="text-[#73E3B4] font-mono">
+                          {formatTaka(parseFloat(targetBalanceStr) || 0)}
+                        </strong>
+                        .
+                      </div>
+                      {editingNetActivity !== 0 && (
+                        <div>
+                          Past ledger activity:{' '}
+                          <span className={editingNetActivity > 0 ? 'text-[#73E3B4]' : 'text-[#FFB4AB]'}>
+                            {editingNetActivity > 0 ? '+' : ''}
+                            {formatTaka(editingNetActivity)}
+                          </span>
+                          . Baseline opening will calibrate to{' '}
+                          <span className="font-mono text-[#BCCAC1]">
+                            {formatTaka((parseFloat(targetBalanceStr) || 0) - editingNetActivity)}
+                          </span>
+                          .
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setBalanceEditMode(balanceEditMode === 'target' ? 'opening' : 'target')
+                      }
+                      className="text-[10px] text-[#73E3B4] hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      {balanceEditMode === 'target'
+                        ? '⚙️ Switch to direct Opening Balance edit'
+                        : '✓ Switch back to Target Current Balance'}
+                    </button>
+
+                    {balanceEditMode === 'opening' && (
+                      <div className="mt-2 p-2.5 rounded-lg bg-[#0C0E12]/80 border border-[#3D4943]/40 space-y-1.5 animate-in fade-in duration-150">
+                        <label className="block text-[10px] text-[#BCCAC1] uppercase tracking-wider">
+                          Direct Baseline Opening Balance (৳)
+                        </label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={openingBalanceStr}
+                          onChange={(e) => setOpeningBalanceStr(e.target.value)}
+                          className="w-full py-1.5 px-2.5 rounded bg-[#1A1C20] border border-[#3D4943]/50 text-xs text-[#E2E2E8] font-mono tabular-nums outline-none focus:border-[#73E3B4]"
+                        />
+                        <span className="text-[10px] text-[#87948C] block">
+                          Resulting current balance will be:{' '}
+                          <strong className="text-[#73E3B4] font-mono">
+                            {formatTaka((parseFloat(openingBalanceStr) || 0) + editingNetActivity)}
+                          </strong>
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-[11px] text-[#BCCAC1] uppercase tracking-wider mb-1">
+                    Opening Balance (৳)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={openingBalanceStr}
+                    onChange={(e) => setOpeningBalanceStr(e.target.value)}
+                    className="w-full py-2 px-3 rounded-lg bg-[#0C0E12] border border-[#3D4943]/50 text-xs text-[#E2E2E8] font-mono tabular-nums outline-none focus:border-[#73E3B4]"
+                  />
+                  <span className="text-[10px] text-[#87948C] mt-1 block">
+                    Starting funds present in this account before logging transactions.
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-3 border-t border-[#3D4943]/30">
