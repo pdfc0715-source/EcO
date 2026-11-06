@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   TrendingDown,
@@ -27,7 +27,6 @@ import {
 import { formatTaka } from '../domain/money';
 import { calculateRecurringEndDate } from '../domain/dates';
 import { calculateTransferCharge } from '../domain/calculations';
-import { resolvePaymentMethod, isMethodActive } from '../domain/paymentMethods';
 
 interface EditActivityModalProps {
   isOpen: boolean;
@@ -123,12 +122,10 @@ export const EditActivityModal: React.FC<EditActivityModalProps> = ({
   useEffect(() => {
     if (item && item.rawRecord) {
       setAmountStr(String(item.amount || ''));
-      const rawDate = item.date || (item.rawRecord as any)?.date || '';
-      setDate(rawDate ? rawDate.split('T')[0] : '');
+      setDate(item.date || '');
       setTitle(item.title || '');
-      setDescription(item.description || (item.rawRecord as any)?.description || (item.rawRecord as any)?.note || '');
-      const resolvedPay = resolvePaymentMethod(item.payMethodId, paymentMethods)?.id || item.payMethodId || paymentMethods[0]?.id || '';
-      setPayMethodId(resolvedPay);
+      setDescription(item.description || '');
+      setPayMethodId(item.payMethodId || paymentMethods[0]?.id || '');
       setValidationError(null);
 
       if (item.activityType === 'expense') {
@@ -146,10 +143,8 @@ export const EditActivityModal: React.FC<EditActivityModalProps> = ({
         setSourceName(ea.source || 'Salary');
       } else if (item.activityType === 'transfer') {
         const tr = item.rawRecord as TransferRecord;
-        const resolvedFrom = resolvePaymentMethod(tr.fromMethodId, paymentMethods)?.id || tr.fromMethodId;
-        const resolvedTo = resolvePaymentMethod(tr.toMethodId, paymentMethods)?.id || tr.toMethodId;
-        setFromMethodId(resolvedFrom);
-        setToMethodId(resolvedTo);
+        setFromMethodId(tr.fromMethodId);
+        setToMethodId(tr.toMethodId);
         setApplyCharge(Boolean(tr.chargeApplied));
         setChargeRate(tr.chargeRate || 1.85);
       } else if (item.activityType === 'transaction') {
@@ -162,10 +157,7 @@ export const EditActivityModal: React.FC<EditActivityModalProps> = ({
   }, [item, paymentMethods, categories, people]);
 
   const parsedAmount = parseFloat(amountStr) || 0;
-  const availableMethods = useMemo(() => {
-    const list = paymentMethods.filter(isMethodActive);
-    return list.length > 0 ? list : paymentMethods;
-  }, [paymentMethods]);
+  const activeMethods = paymentMethods.filter((m) => m.isActive);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -513,14 +505,9 @@ export const EditActivityModal: React.FC<EditActivityModalProps> = ({
                     onChange={(e) => setFromMethodId(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-[#1A1C20] border border-[#3D4943]/50 text-xs text-[#E2E2E8] focus:outline-none focus:border-[#73E3B4]"
                   >
-                    {availableMethods.map((m) => (
+                    {activeMethods.map((m) => (
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
-                    {fromMethodId && !availableMethods.some((m) => m.id === fromMethodId) && (
-                      <option key={fromMethodId} value={fromMethodId}>
-                        {resolvePaymentMethod(fromMethodId, paymentMethods)?.name || fromMethodId}
-                      </option>
-                    )}
                   </select>
                 </div>
                 <div>
@@ -530,14 +517,9 @@ export const EditActivityModal: React.FC<EditActivityModalProps> = ({
                     onChange={(e) => setToMethodId(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-[#1A1C20] border border-[#3D4943]/50 text-xs text-[#E2E2E8] focus:outline-none focus:border-[#73E3B4]"
                   >
-                    {availableMethods.map((m) => (
+                    {activeMethods.map((m) => (
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
-                    {toMethodId && !availableMethods.some((m) => m.id === toMethodId) && (
-                      <option key={toMethodId} value={toMethodId}>
-                        {resolvePaymentMethod(toMethodId, paymentMethods)?.name || toMethodId}
-                      </option>
-                    )}
                   </select>
                 </div>
               </div>
@@ -602,16 +584,11 @@ export const EditActivityModal: React.FC<EditActivityModalProps> = ({
                 onChange={(e) => setPayMethodId(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-[#0C0E12] border border-[#3D4943]/50 text-xs text-[#E2E2E8] focus:outline-none focus:border-[#73E3B4]"
               >
-                {availableMethods.map((m) => (
+                {activeMethods.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}
                   </option>
                 ))}
-                {payMethodId && !availableMethods.some((m) => m.id === payMethodId) && (
-                  <option key={payMethodId} value={payMethodId}>
-                    {resolvePaymentMethod(payMethodId, paymentMethods)?.name || payMethodId}
-                  </option>
-                )}
               </select>
             </div>
           )}
