@@ -23,7 +23,7 @@ import {
   SettlementRefund
 } from '../domain/settlementTypes';
 import { poishaToTaka } from '../domain/settlementEngine';
-import { createDefaultPaymentMethods, getDefaultCashMethodId } from '../domain/paymentMethods';
+import { createDefaultPaymentMethods, getDefaultCashMethodId, BUILTIN_CASH_ID, BUILTIN_BKASH_ID, BUILTIN_NAGAD_ID } from '../domain/paymentMethods';
 import { SEVEN_DAYS_MS } from '../domain/dates';
 import { EcoBackupV1, migrateBackupV1ToDomain } from '../domain/backupV1';
 import {
@@ -390,29 +390,18 @@ export class HybridFirebaseRepository {
               : [];
 
             if (loadedMethods.length === 0) {
-              loadedMethods = this.paymentMethods.length > 0 ? [...this.paymentMethods] : createDefaultPaymentMethods();
+              loadedMethods = createDefaultPaymentMethods();
               for (const m of loadedMethods) {
                 await this.setDocSafe(doc(db, 'users', userId, 'paymentMethods', m.id), m);
               }
             } else {
-              // Merge any custom/bank methods that were already in this.paymentMethods (from local cache or guest mode)
-              for (const localM of this.paymentMethods) {
-                const inLoaded = loadedMethods.find(
-                  (m) => m.id === localM.id || m.name.toLowerCase().trim() === localM.name.toLowerCase().trim()
-                );
-                if (!inLoaded) {
-                  await this.setDocSafe(doc(db, 'users', userId, 'paymentMethods', localM.id), localM);
-                  loadedMethods.push(localM);
-                }
-              }
               // Ensure core wallets (Cash, bKash, Nagad) exist
               const coreDefaults = createDefaultPaymentMethods();
               for (const def of coreDefaults) {
                 const exists = loadedMethods.find(
                   (m) =>
                     m.id === def.id ||
-                    m.name.toLowerCase().trim() === def.name.toLowerCase().trim() ||
-                    (def.type === 'cash' && m.type === 'cash')
+                    m.name.toLowerCase().trim() === def.name.toLowerCase().trim()
                 );
                 if (!exists) {
                   await this.setDocSafe(doc(db, 'users', userId, 'paymentMethods', def.id), def);
@@ -431,61 +420,35 @@ export class HybridFirebaseRepository {
             } catch {}
 
             let changed = false;
-
-            // Discover and instantiate any extra bank/custom wallets recorded in openingBalances
-            if (ob) {
-              for (const [key, val] of Object.entries(ob)) {
-                if (['cash', 'bkash', 'nagad', 'date', 'id', 'createdAt', 'timestamp', 'updatedAt'].includes(key.toLowerCase())) continue;
-                if (typeof val === 'number') {
-                  const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-                  const exists = loadedMethods.some(
-                    (m) =>
-                      m.id.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanKey) ||
-                      m.name.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanKey)
-                  );
-                  if (!exists && cleanKey) {
-                    const customName = key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase()).trim();
-                    const newCustomMethod: PaymentMethod = {
-                      id: `method_${cleanKey}_migrated`,
-                      name: customName,
-                      type: customName.toLowerCase().includes('bank') ? 'bank' : 'mobile_money',
-                      isBuiltIn: false,
-                      isActive: true,
-                      balance: val,
-                      openingBalance: val,
-                      createdAt: new Date().toISOString(),
-                      updatedAt: new Date().toISOString(),
-                      legacyNames: [key, customName]
-                    };
-                    loadedMethods.push(newCustomMethod);
-                    await this.setDocSafe(doc(db, 'users', userId, 'paymentMethods', newCustomMethod.id), newCustomMethod);
-                    changed = true;
-                  }
-                }
-              }
-            }
-
             loadedMethods = loadedMethods.map((m) => {
               const nameLower = m.name.toLowerCase().trim();
               let targetOpening = m.openingBalance || 0;
 
               if (ob) {
-                if ((m.type === 'cash' || nameLower === 'cash') && ob.cash !== undefined) {
+                const isCoreCash = m.id === BUILTIN_CASH_ID || (m.isBuiltIn && m.type === 'cash') || nameLower === 'cash';
+                const isCoreBkash = m.id === BUILTIN_BKASH_ID || nameLower === 'bkash';
+                const isCoreNagad = m.id === BUILTIN_NAGAD_ID || nameLower === 'nagad';
+
+                if (isCoreCash && ob.cash !== undefined) {
                   const obVal = Number(ob.cash) || 0;
                   if (targetOpening === 0 && obVal > 0) targetOpening = obVal;
                   else if (targetOpening > 0 && obVal === 0) ob.cash = targetOpening;
-                } else if (nameLower.includes('bkash') && ob.bkash !== undefined) {
+                } else if (isCoreBkash && ob.bkash !== undefined) {
                   const obVal = Number(ob.bkash) || 0;
                   if (targetOpening === 0 && obVal > 0) targetOpening = obVal;
                   else if (targetOpening > 0 && obVal === 0) ob.bkash = targetOpening;
-                } else if (nameLower.includes('nagad') && ob.nagad !== undefined) {
+                } else if (isCoreNagad && ob.nagad !== undefined) {
                   const obVal = Number(ob.nagad) || 0;
                   if (targetOpening === 0 && obVal > 0) targetOpening = obVal;
                   else if (targetOpening > 0 && obVal === 0) ob.nagad = targetOpening;
                 } else {
+                  // Custom wallets: check cleaned name key or wallet ID
                   const cleanKey = nameLower.replace(/[^a-z0-9]/g, '');
                   if (cleanKey && ob[cleanKey] !== undefined) {
                     const obVal = Number(ob[cleanKey]) || 0;
+                    if (targetOpening === 0 && obVal > 0) targetOpening = obVal;
+                  } else if (ob[m.id] !== undefined) {
+                    const obVal = Number(ob[m.id]) || 0;
                     if (targetOpening === 0 && obVal > 0) targetOpening = obVal;
                   }
                 }
@@ -633,16 +596,22 @@ export class HybridFirebaseRepository {
             const updated = this.paymentMethods.map((m) => {
               const nameLower = m.name.toLowerCase().trim();
               let target = m.openingBalance || 0;
-              if ((m.type === 'cash' || nameLower === 'cash') && ob.cash !== undefined) {
+              const isCoreCash = m.id === BUILTIN_CASH_ID || (m.isBuiltIn && m.type === 'cash') || nameLower === 'cash';
+              const isCoreBkash = m.id === BUILTIN_BKASH_ID || nameLower === 'bkash';
+              const isCoreNagad = m.id === BUILTIN_NAGAD_ID || nameLower === 'nagad';
+
+              if (isCoreCash && ob.cash !== undefined) {
                 target = Number(ob.cash) || 0;
-              } else if (nameLower.includes('bkash') && ob.bkash !== undefined) {
+              } else if (isCoreBkash && ob.bkash !== undefined) {
                 target = Number(ob.bkash) || 0;
-              } else if (nameLower.includes('nagad') && ob.nagad !== undefined) {
+              } else if (isCoreNagad && ob.nagad !== undefined) {
                 target = Number(ob.nagad) || 0;
               } else {
                 const cleanKey = nameLower.replace(/[^a-z0-9]/g, '');
                 if (cleanKey && ob[cleanKey] !== undefined) {
                   target = Number(ob[cleanKey]) || 0;
+                } else if (ob[m.id] !== undefined) {
+                  target = Number(ob[m.id]) || 0;
                 }
               }
               if (m.openingBalance !== target) {
@@ -683,18 +652,8 @@ export class HybridFirebaseRepository {
           colRef,
           (snapshot) => {
             const items = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as any[];
-            if (target === 'paymentMethods') {
-              if (items.length === 0 && this.paymentMethods.length > 0) {
-                return; // Avoid transient empty wipe
-              }
-              const methodMap = new Map<string, PaymentMethod>();
-              this.paymentMethods.forEach((m) => methodMap.set(m.id, m));
-              items.forEach((m) => methodMap.set(m.id, { ...methodMap.get(m.id), ...m }));
-              const merged = Array.from(methodMap.values());
-              this.paymentMethods = merged;
-              this.saveToLocalStorageCache('paymentMethods', merged);
-              this.notify();
-              return;
+            if (target === 'paymentMethods' && items.length === 0 && this.paymentMethods.length > 0) {
+              return; // Avoid transient empty wipe
             }
             (this as any)[target] = items;
             this.saveToLocalStorageCache(target, items);
@@ -1101,7 +1060,6 @@ export class HybridFirebaseRepository {
     const index = list.findIndex((m) => m.id === method.id);
     const updated = {
       ...method,
-      isActive: method.isActive !== false,
       updatedAt: new Date().toISOString()
     };
 
@@ -1118,9 +1076,9 @@ export class HybridFirebaseRepository {
         await this.setDocSafe(doc(db, 'users', this.activeUserId, 'paymentMethods', method.id), updated);
 
         // Also sync openingBalances to root user document and openingBalances/current subcollection
-        const cashM = list.find((m) => m.type === 'cash' || m.name.toLowerCase() === 'cash');
-        const bkashM = list.find((m) => m.name.toLowerCase().includes('bkash'));
-        const nagadM = list.find((m) => m.name.toLowerCase().includes('nagad'));
+        const cashM = list.find((m) => m.id === BUILTIN_CASH_ID || (m.isBuiltIn && m.type === 'cash') || m.name.toLowerCase() === 'cash');
+        const bkashM = list.find((m) => m.id === BUILTIN_BKASH_ID || m.name.toLowerCase() === 'bkash');
+        const nagadM = list.find((m) => m.id === BUILTIN_NAGAD_ID || m.name.toLowerCase() === 'nagad');
         const openingBalancesData: Record<string, any> = {
           cash: cashM?.openingBalance || 0,
           bkash: bkashM?.openingBalance || 0,
@@ -1132,27 +1090,30 @@ export class HybridFirebaseRepository {
           const key = m.name.toLowerCase().replace(/[^a-z0-9]/g, '');
           if (key && !['cash', 'bkash', 'nagad'].includes(key)) {
             openingBalancesData[key] = m.openingBalance || 0;
+            openingBalancesData[m.id] = m.openingBalance || 0;
           }
         });
 
-        await this.setDocSafe(
-          doc(db, 'users', this.activeUserId),
-          { openingBalances: openingBalancesData, updatedAt: new Date().toISOString() },
-          { merge: true }
-        );
+        try {
+          await this.setDocSafe(
+            doc(db, 'users', this.activeUserId),
+            { openingBalances: openingBalancesData, updatedAt: new Date().toISOString() },
+            { merge: true }
+          );
 
-        await this.setDocSafe(
-          doc(db, 'users', this.activeUserId, 'openingBalances', 'current'),
-          {
-            id: 'current',
-            cash: openingBalancesData.cash,
-            bkash: openingBalancesData.bkash,
-            nagad: openingBalancesData.nagad,
-            date: new Date().toISOString().split('T')[0],
-            updatedAt: Date.now()
-          },
-          { merge: true }
-        );
+          await this.setDocSafe(
+            doc(db, 'users', this.activeUserId, 'openingBalances', 'current'),
+            {
+              id: 'current',
+              ...openingBalancesData,
+              date: new Date().toISOString().split('T')[0],
+              updatedAt: Date.now()
+            },
+            { merge: true }
+          );
+        } catch (obErr) {
+          console.warn('[EcO openingBalances sync warning]:', obErr);
+        }
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `users/${this.activeUserId}/paymentMethods/${method.id}`);
       }
