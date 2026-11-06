@@ -211,9 +211,21 @@ export function computeStatsOverview(
   const averagePerTransaction = transactionCount > 0 ? roundToTwoDecimals(totalSpent / transactionCount) : 0;
 
   // Wallet breakdowns
-  const cashMethod = methods.find((m) => m.name.toLowerCase() === 'cash');
-  const bkashMethod = methods.find((m) => m.name.toLowerCase() === 'bkash');
-  const nagadMethod = methods.find((m) => m.name.toLowerCase() === 'nagad');
+  const findMethod = (idOrName?: string) => {
+    if (!idOrName) return undefined;
+    const direct = methods.find((m) => m.id === idOrName);
+    if (direct) return direct;
+    const lower = idOrName.trim().toLowerCase();
+    return methods.find(
+      (m) =>
+        m.name.trim().toLowerCase() === lower ||
+        m.legacyNames?.some((ln) => ln.trim().toLowerCase() === lower)
+    );
+  };
+
+  const cashMethod = findMethod('Cash');
+  const bkashMethod = findMethod('bKash');
+  const nagadMethod = findMethod('Nagad');
 
   let cashSpent = 0;
   let bkashSpent = 0;
@@ -221,16 +233,16 @@ export function computeStatsOverview(
   const methodSpentMap = new Map<string, number>();
 
   currentMergedExpenses.forEach((e) => {
-    const current = methodSpentMap.get(e.payMethodId) || 0;
-    methodSpentMap.set(e.payMethodId, current + e.amount);
+    const m = findMethod(e.payMethodId);
+    const key = m ? m.id : (e.payMethodId || 'cash');
+    const current = methodSpentMap.get(key) || 0;
+    methodSpentMap.set(key, current + e.amount);
 
-    if (cashMethod && e.payMethodId === cashMethod.id) {
+    if (m && cashMethod && m.id === cashMethod.id) {
       cashSpent += e.amount;
-    }
-    if (bkashMethod && e.payMethodId === bkashMethod.id) {
+    } else if (m && bkashMethod && m.id === bkashMethod.id) {
       bkashSpent += e.amount;
-    }
-    if (nagadMethod && e.payMethodId === nagadMethod.id) {
+    } else if (m && nagadMethod && m.id === nagadMethod.id) {
       nagadSpent += e.amount;
     }
   });
@@ -240,10 +252,10 @@ export function computeStatsOverview(
   nagadSpent = roundToTwoDecimals(nagadSpent);
 
   const methodBreakdown = Array.from(methodSpentMap.entries()).map(([mId, amt]) => {
-    const m = methods.find((item) => item.id === mId);
+    const m = findMethod(mId);
     return {
       methodId: mId,
-      name: m ? m.name : 'Unknown Wallet',
+      name: m ? m.name : mId,
       amount: roundToTwoDecimals(amt),
       percentage: totalSpent > 0 ? Math.round((amt / totalSpent) * 100) : 0
     };
