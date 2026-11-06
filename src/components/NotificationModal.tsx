@@ -15,7 +15,7 @@ import {
 import { AppNotification, EcOProposal, PaymentMethod } from '../domain/types';
 import { formatDisplayDate } from '../domain/dates';
 import { formatTaka } from '../domain/money';
-import { getDefaultCashMethodId, isMethodActive } from '../domain/paymentMethods';
+import { getDefaultCashMethodId } from '../domain/paymentMethods';
 
 interface NotificationModalProps {
   isOpen: boolean;
@@ -64,7 +64,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
 
   if (!isOpen) return null;
 
-  const activeWallets = paymentMethods.filter(isMethodActive);
+  const activeWallets = paymentMethods.filter((m) => m.isActive);
   const defaultWalletId = getDefaultCashMethodId(activeWallets.length > 0 ? activeWallets : paymentMethods);
 
   const handleAccept = async (propId: string) => {
