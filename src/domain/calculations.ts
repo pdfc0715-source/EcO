@@ -11,7 +11,7 @@ import {
 } from './types';
 import { roundToTwoDecimals } from './money';
 import { getTodayDateString } from './dates';
-import { resolvePaymentMethod, isMethodActive } from './paymentMethods';
+import { BUILTIN_CASH_ID, BUILTIN_BKASH_ID, BUILTIN_NAGAD_ID } from './paymentMethods';
 
 export interface MethodBalanceBreakdown {
   methodId: string;
@@ -65,21 +65,98 @@ export function calculateFinancialSummary(
     });
   });
 
-  // Multi-key alias resolver so transactions with legacy IDs, names, or aliases match their wallet
+  // Multi-key alias resolver so transactions with exact IDs, names, or aliases match their wallet
+  const methodLookup = new Map<string, MethodBalanceBreakdown>();
+
+  // Determine primary core wallets so aliases like 'cash', 'bkash', 'nagad' only map to the core built-in wallet
+  const primaryCash = methods.find((m) => m.id === BUILTIN_CASH_ID || (m.isBuiltIn && m.type === 'cash') || m.name.trim().toLowerCase() === 'cash') || methods.find((m) => m.type === 'cash');
+  const primaryBkash = methods.find((m) => m.id === BUILTIN_BKASH_ID || m.name.trim().toLowerCase() === 'bkash');
+  const primaryNagad = methods.find((m) => m.id === BUILTIN_NAGAD_ID || m.name.trim().toLowerCase() === 'nagad');
+
+  methods.forEach((m) => {
+    const item = breakdownMap.get(m.id);
+    if (!item) return;
+    methodLookup.set(m.id, item);
+    methodLookup.set(m.id.toLowerCase(), item);
+    methodLookup.set(m.name.trim().toLowerCase(), item);
+    if (m.legacyNames) {
+      m.legacyNames.forEach((ln) => methodLookup.set(ln.trim().toLowerCase(), item));
+    }
+  });
+
+  // Assign canonical aliases strictly to the primary core wallets
+  if (primaryCash) {
+    const cashItem = breakdownMap.get(primaryCash.id);
+    if (cashItem) {
+      methodLookup.set('cash', cashItem);
+      methodLookup.set('m_cash', cashItem);
+      methodLookup.set('cash_wallet', cashItem);
+      methodLookup.set('cash wallet', cashItem);
+    }
+  }
+  if (primaryBkash) {
+    const bkashItem = breakdownMap.get(primaryBkash.id);
+    if (bkashItem) {
+      methodLookup.set('bkash', bkashItem);
+      methodLookup.set('m_bkash', bkashItem);
+      methodLookup.set('bkash_wallet', bkashItem);
+      methodLookup.set('bkash wallet', bkashItem);
+    }
+  }
+  if (primaryNagad) {
+    const nagadItem = breakdownMap.get(primaryNagad.id);
+    if (nagadItem) {
+      methodLookup.set('nagad', nagadItem);
+      methodLookup.set('m_nagad', nagadItem);
+      methodLookup.set('nagad_wallet', nagadItem);
+      methodLookup.set('nagad wallet', nagadItem);
+    }
+  }
+
   const resolveItem = (payMethodId?: string): MethodBalanceBreakdown | undefined => {
     if (!payMethodId) return undefined;
     const direct = breakdownMap.get(payMethodId);
     if (direct) return direct;
-    const resolvedMethod = resolvePaymentMethod(payMethodId, methods);
-    if (resolvedMethod) {
-      return breakdownMap.get(resolvedMethod.id);
-    }
     const clean = payMethodId.trim().toLowerCase();
-    for (const [id, item] of breakdownMap.entries()) {
-      if (id.toLowerCase() === clean || item.name.toLowerCase() === clean) {
-        return item;
+    const lookup = methodLookup.get(clean);
+    if (lookup) return lookup;
+
+    // Check exact name match against all registered methods
+    for (const m of methods) {
+      if (m.name.trim().toLowerCase() === clean) {
+        return breakdownMap.get(m.id);
+      }
+      if (m.legacyNames && m.legacyNames.some((ln) => ln.trim().toLowerCase() === clean)) {
+        return breakdownMap.get(m.id);
       }
     }
+
+    // Dynamic registration fallback: if a transaction explicitly references a custom wallet ID or name
+    // that wasn't in methods, create a breakdown entry so user funds and records are never lost
+    if (clean && !clean.includes('unknown') && !clean.includes('undefined')) {
+      const dynamicName = payMethodId.startsWith('method_')
+        ? payMethodId.replace('method_', '').replace(/_/g, ' ')
+        : payMethodId;
+      const dynamicItem: MethodBalanceBreakdown = {
+        methodId: payMethodId,
+        name: dynamicName,
+        openingBalance: 0,
+        earnings: 0,
+        expenses: 0,
+        recurringExpenses: 0,
+        transfersIn: 0,
+        transfersOut: 0,
+        transfersFees: 0,
+        peerGivenOut: 0,
+        peerTakenIn: 0,
+        currentBalance: 0
+      };
+      breakdownMap.set(payMethodId, dynamicItem);
+      methodLookup.set(payMethodId, dynamicItem);
+      methodLookup.set(clean, dynamicItem);
+      return dynamicItem;
+    }
+
     return undefined;
   };
 
@@ -168,9 +245,9 @@ export function calculateFinancialSummary(
       item.peerGivenOut
     );
 
-    // Only active methods contribute to active liquid total (treat undefined as active)
+    // Only active methods contribute to active liquid total
     const methodObj = methods.find((m) => m.id === item.methodId);
-    if (!methodObj || isMethodActive(methodObj)) {
+    if (methodObj && methodObj.isActive) {
       liquidWalletTotal += item.currentBalance;
     }
     walletBalances.push(item);
