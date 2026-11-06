@@ -22,8 +22,6 @@ import {
 } from '../domain/calculations';
 import {
   resolveDuplicateMethodName,
-  resolvePaymentMethod,
-  isMethodActive,
   MAX_TOTAL_METHODS
 } from '../domain/paymentMethods';
 import { formatTaka } from '../domain/money';
@@ -55,7 +53,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   const [openingBalanceStr, setOpeningBalanceStr] = useState<string>('0');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const activeMethods = paymentMethods.filter(isMethodActive);
+  const activeMethods = paymentMethods.filter((m) => m.isActive);
 
   const handleOpenAdd = () => {
     setErrorMsg(null);
@@ -191,8 +189,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
       {/* Grid of Neutral Payment Method Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {summary.walletBalances.map((item) => {
-          const methodObj = resolvePaymentMethod(item.methodId, paymentMethods);
-          if (!isMethodActive(methodObj) || !methodObj) return null;
+          const methodObj = paymentMethods.find((m) => m.id === item.methodId);
+          if (!methodObj?.isActive) return null;
 
           return (
             <div
