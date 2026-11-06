@@ -14,7 +14,6 @@ import {
   EarningRecord,
   TransferRecord
 } from './types';
-import { resolvePaymentMethod } from './paymentMethods';
 
 export type BrandedStudioMode = 'voucher' | 'person-statement' | 'monthly-card' | 'multi-voucher';
 export type StudioTheme = 'dark' | 'light';
@@ -122,9 +121,20 @@ export function buildVoucherData(
   people: PersonRecord[],
   userName: string = 'Account Owner'
 ): BrandedVoucherData {
-  const method = resolvePaymentMethod(item.payMethodId, paymentMethods);
-  const fromMethod = resolvePaymentMethod(item.fromMethodId, paymentMethods);
-  const toMethod = resolvePaymentMethod(item.toMethodId, paymentMethods);
+  const findMethod = (idOrName?: string) => {
+    if (!idOrName) return undefined;
+    const direct = paymentMethods.find((m) => m.id === idOrName);
+    if (direct) return direct;
+    const lower = idOrName.trim().toLowerCase();
+    return paymentMethods.find(
+      (m) =>
+        m.name.trim().toLowerCase() === lower ||
+        m.legacyNames?.some((ln) => ln.trim().toLowerCase() === lower)
+    );
+  };
+  const method = findMethod(item.payMethodId);
+  const fromMethod = findMethod(item.fromMethodId);
+  const toMethod = findMethod(item.toMethodId);
 
   let activityType: BrandedVoucherData['activityType'] = 'expense';
   let fromParty = userName;
@@ -191,9 +201,21 @@ export function buildMultiVoucherData(
   const now = new Date();
   const createdDate = formatExactDateTime(now.toISOString().split('T')[0], now.getTime());
 
+  const findMethod = (idOrName?: string) => {
+    if (!idOrName) return undefined;
+    const direct = paymentMethods.find((m) => m.id === idOrName);
+    if (direct) return direct;
+    const lower = idOrName.trim().toLowerCase();
+    return paymentMethods.find(
+      (m) =>
+        m.name.trim().toLowerCase() === lower ||
+        m.legacyNames?.some((ln) => ln.trim().toLowerCase() === lower)
+    );
+  };
+
   const voucherItems: BrandedMultiVoucherItem[] = items.map((item) => {
-    const method = resolvePaymentMethod(item.payMethodId, paymentMethods);
-    const fromMethod = resolvePaymentMethod(item.fromMethodId, paymentMethods);
+    const method = findMethod(item.payMethodId);
+    const fromMethod = findMethod(item.fromMethodId);
 
     let activityType: BrandedMultiVoucherItem['activityType'] = 'expense';
     if (item.activityType === 'earning') activityType = 'earning';
@@ -280,7 +302,7 @@ export function buildStatementData(
       totalTaken += t.amount;
       running -= t.amount;
     }
-    const method = resolvePaymentMethod(t.payMethodId, paymentMethods);
+    const method = paymentMethods.find((m) => m.id === t.payMethodId);
     return {
       id: t.id,
       date: t.date,
