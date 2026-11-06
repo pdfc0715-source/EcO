@@ -8,6 +8,7 @@ import {
   PersonRecord,
   PeerTransactionRecord,
   ExpenseRecord,
+  EarningRecord,
   UserSettings,
   UnifiedActivityItem,
   encodePersonShareToken,
@@ -944,6 +945,117 @@ export function runAllRegressionTests(): TestResult[] {
     });
   } catch (e: any) {
     results.push({ name: 'Custom Bank Multi-Wallet Test', passed: false, error: e.message });
+  }
+
+  // Wallet Balance Calibration & Opening Math Test
+  try {
+    // Scenario: bKash has 300 taka (opening 0 + earnings 300).
+    const bkashMethod: PaymentMethod = {
+      id: 'method_bkash_test',
+      name: 'bKash',
+      type: 'mobile_money',
+      isBuiltIn: false,
+      isActive: true,
+      balance: 300,
+      openingBalance: 0,
+      createdAt: '',
+      updatedAt: ''
+    };
+    const testEarn: EarningRecord[] = [
+      { id: 'earn_1', source: 'Freelance', description: '', amount: 300, payMethodId: 'method_bkash_test', date: '2026-11-01', timestamp: 1 }
+    ];
+
+    const initialSum = calculateFinancialSummary([bkashMethod], [], [], testEarn, [], [], []);
+    const initialBal = initialSum.walletBalances[0].currentBalance; // 300
+
+    // User edits wallet in WalletsView: enters 500 as desired balance
+    const targetBalance = 500;
+    const netActivity = initialSum.walletBalances[0].currentBalance - initialSum.walletBalances[0].openingBalance; // 300
+    const calibratedOpening = targetBalance - netActivity; // 500 - 300 = 200
+
+    const updatedBkash: PaymentMethod = {
+      ...bkashMethod,
+      balance: targetBalance,
+      openingBalance: calibratedOpening
+    };
+
+    const updatedSum = calculateFinancialSummary([updatedBkash], [], [], testEarn, [], [], []);
+    const finalBal = updatedSum.walletBalances[0].currentBalance; // 200 + 300 = 500!
+
+    results.push({
+      name: 'Wallet Balance Calibration (bKash ৳300 edited to ৳500 yields ৳500.00, not ৳800.00)',
+      passed: initialBal === 300 && finalBal === 500 && updatedBkash.openingBalance === 200,
+      actual: { initialBal, finalBal, calibratedOpening: updatedBkash.openingBalance },
+      expected: { initialBal: 300, finalBal: 500, calibratedOpening: 200 }
+    });
+  } catch (e: any) {
+    results.push({ name: 'Wallet Balance Calibration Test', passed: false, error: e.message });
+  }
+
+  // Ledger Activity Reassignment Test (Opening Balances Untouched)
+  try {
+    const cashMethod: PaymentMethod = {
+      id: 'method_cash_1',
+      name: 'Cash',
+      type: 'cash',
+      isBuiltIn: true,
+      isActive: true,
+      balance: 1000,
+      openingBalance: 1000,
+      createdAt: '',
+      updatedAt: ''
+    };
+    const customWallet: PaymentMethod = {
+      id: 'method_rocket_1',
+      name: 'Rocket',
+      type: 'mobile_money',
+      isBuiltIn: false,
+      isActive: true,
+      balance: 2000,
+      openingBalance: 2000,
+      createdAt: '',
+      updatedAt: ''
+    };
+
+    // Initially, an expense of 400 is on Cash
+    const expenseRecord: ExpenseRecord = {
+      id: 'exp_move',
+      reason: 'Groceries',
+      category: 'Food',
+      description: '',
+      amount: 400,
+      type: 'regular',
+      payMethodId: 'method_cash_1',
+      date: '2026-11-06',
+      timestamp: 10
+    };
+
+    const beforeMoveSum = calculateFinancialSummary([cashMethod, customWallet], [expenseRecord], [], [], [], [], []);
+    const cashBefore = beforeMoveSum.walletBalances.find(w => w.methodId === 'method_cash_1')?.currentBalance; // 600
+    const rocketBefore = beforeMoveSum.walletBalances.find(w => w.methodId === 'method_rocket_1')?.currentBalance; // 2000
+
+    // User edits activity in ledger history to assign to Rocket
+    const movedExpense: ExpenseRecord = {
+      ...expenseRecord,
+      payMethodId: 'method_rocket_1'
+    };
+
+    const afterMoveSum = calculateFinancialSummary([cashMethod, customWallet], [movedExpense], [], [], [], [], []);
+    const cashAfter = afterMoveSum.walletBalances.find(w => w.methodId === 'method_cash_1')?.currentBalance; // 1000
+    const rocketAfter = afterMoveSum.walletBalances.find(w => w.methodId === 'method_rocket_1')?.currentBalance; // 1600
+
+    // Crucially: Opening balances of BOTH methods are completely unchanged
+    const cashOpeningSame = cashMethod.openingBalance === 1000;
+    const rocketOpeningSame = customWallet.openingBalance === 2000;
+
+    results.push({
+      name: 'Ledger Activity Reassignment (Opening balances stay 100% untouched; flows update accurately)',
+      passed: cashBefore === 600 && rocketBefore === 2000 && cashAfter === 1000 && rocketAfter === 1600 && cashOpeningSame && rocketOpeningSame,
+      actual: { cashBefore, rocketBefore, cashAfter, rocketAfter, cashOpening: cashMethod.openingBalance, rocketOpening: customWallet.openingBalance },
+      expected: { cashBefore: 600, rocketBefore: 2000, cashAfter: 1000, rocketAfter: 1600, cashOpening: 1000, rocketOpening: 2000 }
+    });
+  } catch (e: any) {
+    results.push({ name: 'Ledger Activity Reassignment Test', passed: false, error: e.message });
   }
 
   // Smart Settlement Engine Acceptance Tests
