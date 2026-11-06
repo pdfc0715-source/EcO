@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   Search,
   X,
@@ -265,6 +265,35 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
     setSelectedPersonId('all');
     setDateFilter('all');
   };
+
+  const findMethodName = useCallback(
+    (idOrName?: string) => {
+      if (!idOrName) return undefined;
+      const direct = paymentMethods.find((m) => m.id === idOrName);
+      if (direct) return direct.name;
+      const lower = idOrName.trim().toLowerCase();
+      const byName = paymentMethods.find(
+        (m) =>
+          m.name.trim().toLowerCase() === lower ||
+          m.legacyNames?.some((ln) => ln.trim().toLowerCase() === lower)
+      );
+      if (byName) return byName.name;
+      if (idOrName.startsWith('method_')) {
+        const cleanStr = idOrName
+          .replace(/^method_/, '')
+          .replace(/_migrated$/, '')
+          .replace(/_\d+$/, '')
+          .replace(/_[a-z0-9]{4,8}$/, '');
+        const readable = cleanStr
+          .split('_')
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(' ');
+        if (readable.trim()) return readable;
+      }
+      return idOrName;
+    },
+    [paymentMethods]
+  );
 
   const hasActiveFilters =
     searchTerm !== '' ||
@@ -685,19 +714,6 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
             const isGive = item.activityType === 'transaction' && item.direction === 'give';
             const isTake = item.activityType === 'transaction' && item.direction === 'take';
 
-            const findMethodName = (idOrName?: string) => {
-              if (!idOrName) return undefined;
-              const direct = paymentMethods.find((m) => m.id === idOrName);
-              if (direct) return direct.name;
-              const lower = idOrName.trim().toLowerCase();
-              const byName = paymentMethods.find(
-                (m) =>
-                  m.name.trim().toLowerCase() === lower ||
-                  m.legacyNames?.some((ln) => ln.trim().toLowerCase() === lower)
-              );
-              return byName ? byName.name : idOrName;
-            };
-
             const walletBadge = isTransfer
               ? `${findMethodName(item.fromMethodId) || 'Account'} → ${findMethodName(item.toMethodId) || 'Account'}`
               : findMethodName(item.payMethodId);
@@ -973,7 +989,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
                 <div className="py-2 flex items-center justify-between">
                   <span className="text-[#87948C]">Wallet Account</span>
                   <span className="text-[#73E3B4] font-medium">
-                    {paymentMethods.find((m) => m.id === detailItem.payMethodId)?.name || 'Account'}
+                    {findMethodName(detailItem.payMethodId) || 'Account'}
                   </span>
                 </div>
               )}
@@ -982,7 +998,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
                 <div className="py-2 flex items-center justify-between">
                   <span className="text-[#87948C]">From Wallet</span>
                   <span className="text-[#E2E2E8]">
-                    {paymentMethods.find((m) => m.id === detailItem.fromMethodId)?.name || 'Source'}
+                    {findMethodName(detailItem.fromMethodId) || 'Source'}
                   </span>
                 </div>
               )}
@@ -991,7 +1007,7 @@ export const UnifiedListView: React.FC<UnifiedListViewProps> = ({
                 <div className="py-2 flex items-center justify-between">
                   <span className="text-[#87948C]">To Wallet</span>
                   <span className="text-[#E2E2E8]">
-                    {paymentMethods.find((m) => m.id === detailItem.toMethodId)?.name || 'Destination'}
+                    {findMethodName(detailItem.toMethodId) || 'Destination'}
                   </span>
                 </div>
               )}
