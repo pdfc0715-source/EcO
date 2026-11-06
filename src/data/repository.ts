@@ -1,6 +1,7 @@
 import {
   UserSettings,
   PaymentMethod,
+  PaymentMethodType,
   ExpenseRecord,
   RecurringExpenseRecord,
   EarningRecord,
@@ -389,6 +390,21 @@ export class HybridFirebaseRepository {
               ? (methodsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as PaymentMethod[])
               : [];
 
+            // CRITICAL: Preserve any custom wallets currently in local memory or storage
+            this.paymentMethods.forEach((localM) => {
+              const exists = loadedMethods.some(
+                (m) =>
+                  m.id === localM.id ||
+                  (m.name.toLowerCase().trim() === localM.name.toLowerCase().trim() && m.type === localM.type)
+              );
+              if (!exists) {
+                loadedMethods.push(localM);
+                if (db && userId) {
+                  this.setDocSafe(doc(db, 'users', userId, 'paymentMethods', localM.id), localM).catch(() => {});
+                }
+              }
+            });
+
             if (loadedMethods.length === 0) {
               loadedMethods = createDefaultPaymentMethods();
               for (const m of loadedMethods) {
@@ -477,6 +493,9 @@ export class HybridFirebaseRepository {
             if (sourcesSnap) this.sources = sourcesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
             if (notifsSnap) this.notifications = notifsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
             if (settlementsSnap) this.smartSettlements = settlementsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+
+            // Ensure all custom wallets and referenced payment methods are intact
+            this.ensurePaymentMethodsIntegrity();
 
             // Save to local device cache for offline availability
             this.saveToLocalStorageCache('paymentMethods', this.paymentMethods);
@@ -909,6 +928,9 @@ export class HybridFirebaseRepository {
       } else {
         this.communityIssues = [];
       }
+
+      // Automatically discover and recover any custom wallets referenced across all activities
+      this.ensurePaymentMethodsIntegrity();
     } catch (e) {
       console.warn('[EcO Cache] Failed to load local cache:', e);
     }
@@ -1051,8 +1073,165 @@ export class HybridFirebaseRepository {
     return getDefaultCashMethodId(this.paymentMethods);
   }
 
+  ensurePaymentMethodsIntegrity(): void {
+    const list = [...this.paymentMethods];
+    let changed = false;
+
+    // 1. Ensure core 3 built-in wallets exist
+    const coreCash = list.find(
+      (m) => m.id === BUILTIN_CASH_ID || (m.isBuiltIn && m.type === 'cash') || m.name.toLowerCase() === 'cash'
+    );
+    if (!coreCash) {
+      list.unshift({
+        id: BUILTIN_CASH_ID,
+        name: 'Cash',
+        type: 'cash',
+        isBuiltIn: true,
+        isActive: true,
+        balance: 0,
+        openingBalance: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        legacyNames: ['cash', 'Cash']
+      });
+      changed = true;
+    }
+
+    const coreBkash = list.find((m) => m.id === BUILTIN_BKASH_ID || m.name.toLowerCase() === 'bkash');
+    if (!coreBkash) {
+      list.push({
+        id: BUILTIN_BKASH_ID,
+        name: 'bKash',
+        type: 'mobile_money',
+        isBuiltIn: false,
+        isActive: true,
+        balance: 0,
+        openingBalance: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        legacyNames: ['bkash', 'bKash']
+      });
+      changed = true;
+    }
+
+    const coreNagad = list.find((m) => m.id === BUILTIN_NAGAD_ID || m.name.toLowerCase() === 'nagad');
+    if (!coreNagad) {
+      list.push({
+        id: BUILTIN_NAGAD_ID,
+        name: 'Nagad',
+        type: 'mobile_money',
+        isBuiltIn: false,
+        isActive: true,
+        balance: 0,
+        openingBalance: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        legacyNames: ['nagad', 'Nagad']
+      });
+      changed = true;
+    }
+
+    // 2. Discover all wallet IDs in existing activities and recover missing custom wallets
+    const referencedIds = new Set<string>();
+
+    this.expenses.forEach((e) => { if (e.payMethodId) referencedIds.add(e.payMethodId); });
+    this.recurringExpenses.forEach((r) => { if (r.payMethodId) referencedIds.add(r.payMethodId); });
+    this.earnings.forEach((ea) => { if (ea.payMethodId) referencedIds.add(ea.payMethodId); });
+    this.transfers.forEach((tr) => {
+      if (tr.fromMethodId) referencedIds.add(tr.fromMethodId);
+      if (tr.toMethodId) referencedIds.add(tr.toMethodId);
+    });
+    this.transactions.forEach((tx) => { if (tx.payMethodId) referencedIds.add(tx.payMethodId); });
+    this.smartSettlements.forEach((s) => {
+      if (s.autoWalletSyncPreference?.walletId) referencedIds.add(s.autoWalletSyncPreference.walletId);
+    });
+
+    // Check if there are methods in any other storage or previous cache
+    try {
+      const backupMethodsRaw = localStorage.getItem('eco_local_paymentMethods');
+      if (backupMethodsRaw) {
+        const parsed = JSON.parse(backupMethodsRaw);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((m: PaymentMethod) => {
+            if (m && m.id && !list.some((existing) => existing.id === m.id || existing.name.toLowerCase() === m.name.toLowerCase())) {
+              list.push(m);
+              changed = true;
+            }
+          });
+        }
+      }
+    } catch {}
+
+    // For every referenced ID, ensure it exists in paymentMethods
+    referencedIds.forEach((refId) => {
+      const clean = refId.trim();
+      if (!clean || clean === 'cash' || clean === 'bkash' || clean === 'nagad' || clean === 'unknown') return;
+
+      const exists = list.some((m) =>
+        m.id === clean ||
+        m.id.toLowerCase() === clean.toLowerCase() ||
+        m.name.trim().toLowerCase() === clean.toLowerCase() ||
+        (m.legacyNames && m.legacyNames.some((ln) => ln.trim().toLowerCase() === clean.toLowerCase()))
+      );
+
+      if (!exists) {
+        // Auto-recover this custom wallet!
+        let readableName = clean;
+        if (clean.startsWith('method_')) {
+          const stripped = clean
+            .replace(/^method_/, '')
+            .replace(/_migrated$/, '')
+            .replace(/_\d+$/, '')
+            .replace(/_[a-z0-9]{4,8}$/, '');
+          readableName = stripped
+            .split('_')
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ');
+        }
+        if (!readableName.trim()) readableName = 'Custom Wallet';
+
+        const lower = readableName.toLowerCase();
+        const type: PaymentMethodType = lower.includes('bank')
+          ? 'bank'
+          : lower.includes('card')
+          ? 'credit_card'
+          : lower.includes('cash')
+          ? 'cash'
+          : 'mobile_money';
+
+        const recoveredMethod: PaymentMethod = {
+          id: clean,
+          name: readableName,
+          type,
+          isBuiltIn: false,
+          isActive: true,
+          balance: 0,
+          openingBalance: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          legacyNames: [clean, readableName]
+        };
+
+        list.push(recoveredMethod);
+        changed = true;
+
+        if (isFirebaseConfigured() && db && this.activeUserId) {
+          this.setDocSafe(doc(db, 'users', this.activeUserId, 'paymentMethods', clean), recoveredMethod).catch(() => {});
+        }
+      }
+    });
+
+    if (changed) {
+      this.paymentMethods = list;
+      this.saveToLocalStorageCache('paymentMethods', list);
+    }
+  }
+
   getPaymentMethods(): PaymentMethod[] {
-    return this.paymentMethods.length > 0 ? this.paymentMethods : createDefaultPaymentMethods();
+    if (this.paymentMethods.length === 0) {
+      this.paymentMethods = createDefaultPaymentMethods();
+    }
+    return this.paymentMethods;
   }
 
   async savePaymentMethod(method: PaymentMethod): Promise<void> {
