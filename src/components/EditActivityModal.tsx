@@ -159,6 +159,32 @@ export const EditActivityModal: React.FC<EditActivityModalProps> = ({
   const parsedAmount = parseFloat(amountStr) || 0;
   const activeMethods = paymentMethods.filter((m) => m.isActive);
 
+  const getMethodDisplayName = (idOrName?: string) => {
+    if (!idOrName) return 'Account';
+    const found = paymentMethods.find((m) => m.id === idOrName);
+    if (found) return found.name;
+    const lower = idOrName.trim().toLowerCase();
+    const byName = paymentMethods.find(
+      (m) =>
+        m.name.trim().toLowerCase() === lower ||
+        m.legacyNames?.some((ln) => ln.trim().toLowerCase() === lower)
+    );
+    if (byName) return byName.name;
+    if (idOrName.startsWith('method_')) {
+      const cleanStr = idOrName
+        .replace(/^method_/, '')
+        .replace(/_migrated$/, '')
+        .replace(/_\d+$/, '')
+        .replace(/_[a-z0-9]{4,8}$/, '');
+      const readable = cleanStr
+        .split('_')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+      if (readable.trim()) return readable;
+    }
+    return idOrName;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
@@ -505,6 +531,11 @@ export const EditActivityModal: React.FC<EditActivityModalProps> = ({
                     onChange={(e) => setFromMethodId(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-[#1A1C20] border border-[#3D4943]/50 text-xs text-[#E2E2E8] focus:outline-none focus:border-[#73E3B4]"
                   >
+                    {!activeMethods.some((m) => m.id === fromMethodId) && fromMethodId && (
+                      <option value={fromMethodId}>
+                        {getMethodDisplayName(fromMethodId)} (Current / Unlisted)
+                      </option>
+                    )}
                     {activeMethods.map((m) => (
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
@@ -517,6 +548,11 @@ export const EditActivityModal: React.FC<EditActivityModalProps> = ({
                     onChange={(e) => setToMethodId(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-[#1A1C20] border border-[#3D4943]/50 text-xs text-[#E2E2E8] focus:outline-none focus:border-[#73E3B4]"
                   >
+                    {!activeMethods.some((m) => m.id === toMethodId) && toMethodId && (
+                      <option value={toMethodId}>
+                        {getMethodDisplayName(toMethodId)} (Current / Unlisted)
+                      </option>
+                    )}
                     {activeMethods.map((m) => (
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
@@ -584,6 +620,11 @@ export const EditActivityModal: React.FC<EditActivityModalProps> = ({
                 onChange={(e) => setPayMethodId(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-[#0C0E12] border border-[#3D4943]/50 text-xs text-[#E2E2E8] focus:outline-none focus:border-[#73E3B4]"
               >
+                {!activeMethods.some((m) => m.id === payMethodId) && payMethodId && (
+                  <option value={payMethodId}>
+                    {getMethodDisplayName(payMethodId)} (Current / Unlisted)
+                  </option>
+                )}
                 {activeMethods.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}
