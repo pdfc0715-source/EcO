@@ -872,6 +872,80 @@ export function runAllRegressionTests(): TestResult[] {
     results.push({ name: 'Person Share Token Distinctness Test', passed: false, error: e.message });
   }
 
+  // Test 28: Custom Bank & Multi-Wallet Balance Isolation
+  try {
+    const initialMethods: PaymentMethod[] = [
+      { id: 'm_cash', name: 'Cash', type: 'cash', isBuiltIn: true, isActive: true, balance: 230, openingBalance: 230, createdAt: '', updatedAt: '' },
+      { id: 'm_bkash', name: 'bKash', type: 'mobile_money', isBuiltIn: false, isActive: true, balance: 2195, openingBalance: 2195, createdAt: '', updatedAt: '' },
+      { id: 'm_nagad', name: 'Nagad', type: 'mobile_money', isBuiltIn: false, isActive: true, balance: 132, openingBalance: 132, createdAt: '', updatedAt: '' }
+    ];
+
+    const extraBank: PaymentMethod = {
+      id: 'method_city_bank',
+      name: 'City Bank',
+      type: 'bank',
+      isBuiltIn: false,
+      isActive: true,
+      balance: 5000,
+      openingBalance: 5000,
+      createdAt: '',
+      updatedAt: '',
+      legacyNames: ['City Bank', 'city bank', 'CityBank']
+    };
+
+    const allMethods = [...initialMethods, extraBank];
+
+    const testExpenses: ExpenseRecord[] = [
+      { id: 'e_bank', reason: 'Office Equipment', category: 'Office', description: '', amount: 1000, type: 'regular', payMethodId: 'method_city_bank', date: '2026-11-05', timestamp: 100 },
+      { id: 'e_bkash', reason: 'Dinner', category: 'Food', description: '', amount: 195, type: 'regular', payMethodId: 'm_bkash', date: '2026-11-05', timestamp: 200 }
+    ];
+
+    const summaryRes = calculateFinancialSummary(
+      allMethods,
+      testExpenses,
+      [],
+      [],
+      [],
+      [],
+      []
+    );
+
+    const cashRes = summaryRes.walletBalances.find((w) => w.name === 'Cash');
+    const bkashRes = summaryRes.walletBalances.find((w) => w.name === 'bKash');
+    const nagadRes = summaryRes.walletBalances.find((w) => w.name === 'Nagad');
+    const bankRes = summaryRes.walletBalances.find((w) => w.name === 'City Bank');
+
+    const cashOk = cashRes?.currentBalance === 230;
+    const bkashOk = bkashRes?.currentBalance === 2000;
+    const nagadOk = nagadRes?.currentBalance === 132;
+    const bankOk = bankRes?.currentBalance === 4000;
+    const totalOk = summaryRes.liquidWalletTotal === 6362;
+    const countOk = summaryRes.walletBalances.length === 4;
+
+    results.push({
+      name: 'Custom Bank & Multi-Wallet Balance Isolation (Cash, bKash, Nagad preserved without drift)',
+      passed: cashOk && bkashOk && nagadOk && bankOk && totalOk && countOk,
+      actual: {
+        cash: cashRes?.currentBalance,
+        bkash: bkashRes?.currentBalance,
+        nagad: nagadRes?.currentBalance,
+        bank: bankRes?.currentBalance,
+        liquidTotal: summaryRes.liquidWalletTotal,
+        walletCount: summaryRes.walletBalances.length
+      },
+      expected: {
+        cash: 230,
+        bkash: 2000,
+        nagad: 132,
+        bank: 4000,
+        liquidTotal: 6362,
+        walletCount: 4
+      }
+    });
+  } catch (e: any) {
+    results.push({ name: 'Custom Bank Multi-Wallet Test', passed: false, error: e.message });
+  }
+
   // Smart Settlement Engine Acceptance Tests
   try {
     results.push(...runAllSettlementTests());
