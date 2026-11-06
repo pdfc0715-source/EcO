@@ -24,7 +24,7 @@ import {
   IssueReport
 } from './domain/types';
 import { calculateFinancialSummary } from './domain/calculations';
-import { BUILTIN_BKASH_ID, BUILTIN_NAGAD_ID, resolvePaymentMethod, isMethodActive } from './domain/paymentMethods';
+import { BUILTIN_BKASH_ID, BUILTIN_NAGAD_ID } from './domain/paymentMethods';
 import { invertProposalDirection } from './domain/connections';
 import { Navigation, NavTab } from './components/Navigation';
 import { Header } from './components/Header';
@@ -328,7 +328,7 @@ export default function App() {
       netSavings: overview.netSavings,
       savingsRate,
       topCategories: topCats,
-      activeWalletsCount: paymentMethods.filter(isMethodActive).length,
+      activeWalletsCount: paymentMethods.filter((m) => m.isActive).length,
       totalNetWorth: summary.netTotal,
       userName: user?.displayName || 'EcO User'
     };
@@ -392,10 +392,8 @@ export default function App() {
 
     // Transfers
     transfers.forEach((tr) => {
-      const fromObj = resolvePaymentMethod(tr.fromMethodId, paymentMethods);
-      const toObj = resolvePaymentMethod(tr.toMethodId, paymentMethods);
-      const fromName = fromObj?.name || 'Account';
-      const toName = toObj?.name || 'Account';
+      const fromName = paymentMethods.find((m) => m.id === tr.fromMethodId)?.name || 'Account';
+      const toName = paymentMethods.find((m) => m.id === tr.toMethodId)?.name || 'Account';
       list.push({
         id: tr.id,
         activityType: 'transfer',
@@ -431,37 +429,51 @@ export default function App() {
       });
     });
 
-    const parseTime = (timestamp?: any, dateStr?: string): number => {
-      if (typeof timestamp === 'number' && !isNaN(timestamp) && timestamp > 0) {
-        return timestamp;
+    // Stable, strictly chronological sort: descending by normalized date, then timestamp, then ID
+    const normalizeDateStr = (d?: string): string => {
+      if (!d) return '1970-01-01';
+      const clean = d.split('T')[0].trim().replace(/\//g, '-');
+      const parts = clean.split('-');
+      if (parts.length === 3) {
+        const y = parts[0].padStart(4, '0');
+        const m = parts[1].padStart(2, '0');
+        const day = parts[2].padStart(2, '0');
+        return `${y}-${m}-${day}`;
       }
-      if (typeof timestamp === 'string') {
-        const num = Number(timestamp);
-        if (!isNaN(num) && num > 0) return num;
+      return clean;
+    };
+
+    const getValidTimestamp = (item: UnifiedActivityItem): number => {
+      if (typeof item.timestamp === 'number' && !isNaN(item.timestamp) && item.timestamp > 0) {
+        return item.timestamp;
       }
-      if (dateStr) {
-        const parsed = Date.parse(dateStr);
-        if (!isNaN(parsed)) return parsed;
+      const raw: any = item.rawRecord;
+      if (raw && typeof raw.timestamp === 'number' && !isNaN(raw.timestamp) && raw.timestamp > 0) {
+        return raw.timestamp;
+      }
+      if (raw && raw.createdAt) {
+        const t = new Date(raw.createdAt).getTime();
+        if (!isNaN(t) && t > 0) return t;
+      }
+      if (item.date) {
+        const t = new Date(item.date).getTime();
+        if (!isNaN(t)) return t;
       }
       return 0;
     };
 
-    const extractDateKey = (dateStr?: string): string => {
-      if (!dateStr) return '';
-      if (dateStr.includes('T')) return dateStr.split('T')[0];
-      return dateStr.trim();
-    };
-
-    // Sort descending by date, then timestamp (bulletproof against NaN)
     return list.sort((a, b) => {
-      const dateA = extractDateKey(a.date);
-      const dateB = extractDateKey(b.date);
+      const dateA = normalizeDateStr(a.date);
+      const dateB = normalizeDateStr(b.date);
       if (dateA !== dateB) {
         return dateB.localeCompare(dateA);
       }
-      const timeA = parseTime(a.timestamp, a.date);
-      const timeB = parseTime(b.timestamp, b.date);
-      return timeB - timeA;
+      const timeA = getValidTimestamp(a);
+      const timeB = getValidTimestamp(b);
+      if (timeA !== timeB) {
+        return timeB - timeA;
+      }
+      return (b.id || '').localeCompare(a.id || '');
     });
   }, [expenses, recurringExpenses, earnings, transfers, transactions, people, paymentMethods]);
 
