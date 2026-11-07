@@ -212,13 +212,19 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
                       <div>
                         <div className="text-[11px] text-[#BCCAC1]">
                           {prop.isRepayment
-                            ? 'Repayment amount:'
+                            ? prop.originalSenderType === 'give'
+                              ? `${prop.senderName} is repaying you:`
+                              : `${prop.senderName} recorded receiving repayment from you:`
                             : isRecipientBorrowing
                             ? 'Lending offer (you borrow):'
                             : 'Requesting to borrow from you:'}
                         </div>
                         <div className="text-[11px] text-[#87948C] mt-0.5">
-                          {isRecipientBorrowing
+                          {prop.isRepayment
+                            ? prop.originalSenderType === 'give'
+                              ? `Outstanding debt from ${prop.senderName} will be reduced upon confirmation`
+                              : `Your payable to ${prop.senderName} will be reduced upon confirmation`
+                            : isRecipientBorrowing
                             ? `You will owe ${prop.senderName} upon acceptance`
                             : `${prop.senderName} will owe you upon acceptance`}
                         </div>
@@ -238,7 +244,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
                     {/* Quick Wallet Selector for Acceptance */}
                     <div className="pt-1">
                       <label className="block text-[11px] font-medium text-[#BCCAC1] mb-1">
-                        Select your wallet to {isRecipientBorrowing ? 'receive / deposit' : 'pay from'}:
+                        Select your wallet to {prop.isRepayment ? (prop.originalSenderType === 'give' ? 'deposit repayment into' : 'pay repayment from') : (isRecipientBorrowing ? 'receive borrowed funds into' : 'pay / lend funds from')}:
                       </label>
                       <select
                         value={chosenWallet}
