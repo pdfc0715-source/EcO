@@ -735,76 +735,8 @@ export class HybridFirebaseRepository {
             this.proposals = items;
             this.saveToLocalStorageCache('proposals', items);
 
-            // Real-time synchronization:
-            // 1. Generate notification for incoming pending proposals
-            for (const p of items) {
-              if (p.status === 'pending' && p.senderUserId !== userId) {
-                const notifExists = this.notifications.some((n) => n.relatedId === p.id);
-                if (!notifExists) {
-                  const notif: AppNotification = {
-                    id: `notif_prop_${p.id}`,
-                    type: 'proposal_received',
-                    title: `⚡ New EcO ${p.isRepayment ? 'Repayment' : 'Debt'} Request`,
-                    body: `${p.senderName} (${p.senderCode || 'peer'}) requested to ${
-                      p.originalSenderType === 'give' ? 'lend you' : 'borrow from you'
-                    } ৳${p.amount.toLocaleString()}. Tap to accept or reject.`,
-                    createdAt: p.createdAt || Date.now(),
-                    readAt: null,
-                    expiresAt: Date.now() + 7 * 86400000,
-                    relatedType: 'proposal',
-                    relatedId: p.id
-                  };
-                  this.addNotification(notif).catch(() => {});
-                }
-              }
-
-              // 2. When sender's client observes that an outgoing proposal transitioned to 'accepted',
-              // if sender doesn't have the confirmed transaction in ledger yet, record it!
-              if (p.status === 'accepted' && p.senderUserId === userId) {
-                const alreadyRecorded = this.transactions.some(
-                  (t) => t.id === `tx_prop_${p.id}_sender` || t.proposalId === p.id
-                );
-                if (!alreadyRecorded) {
-                  let senderPerson = this.people.find(
-                    (pe) =>
-                      (p.recipientCode && pe.connectionCode === p.recipientCode) ||
-                      (p.recipientUserId && pe.connectedUserId === p.recipientUserId) ||
-                      pe.name.toLowerCase() === p.recipientName.toLowerCase()
-                  );
-                  if (!senderPerson) {
-                    senderPerson = {
-                      id: `person_peer_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
-                      name: p.recipientName,
-                      isConnected: true,
-                      connectionCode: p.recipientCode,
-                      connectedUserId: p.recipientUserId,
-                      createdAt: new Date().toISOString()
-                    };
-                    await this.addPerson(senderPerson);
-                  }
-                  const senderTx: PeerTransactionRecord = {
-                    id: `tx_prop_${p.id}_sender`,
-                    personId: senderPerson.id,
-                    type: p.originalSenderType,
-                    amount: p.amount,
-                    totalAmount: p.amount,
-                    payMethodId: p.payMethodId || this.getCashMethodId(),
-                    tag: p.isRepayment ? 'Repayment' : 'Shared Debt',
-                    description: p.note
-                      ? `${p.note} (Confirmed)`
-                      : p.isRepayment
-                      ? `Repayment confirmed with ${p.recipientName}`
-                      : `Shared loan with ${p.recipientName}`,
-                    date: p.date,
-                    timestamp: p.updatedAt || Date.now(),
-                    status: 'accepted',
-                    proposalId: p.id
-                  };
-                  await this.addTransaction(senderTx);
-                }
-              }
-            }
-
+            // Synchronize proposals to ledger transactions and notifications
+            await this.ensureTransactionsForAcceptedProposals();
             this.notify();
           },
           (err) => console.warn('[EcO Firestore] Proposals sync listener warning:', err)
@@ -931,6 +863,11 @@ export class HybridFirebaseRepository {
 
       // Automatically discover and recover any custom wallets referenced across all activities
       this.ensurePaymentMethodsIntegrity();
+
+      // Automatically sync any accepted proposals to local ledger transactions
+      this.ensureTransactionsForAcceptedProposals().catch((err) => {
+        console.warn('Sync accepted proposals warning:', err);
+      });
     } catch (e) {
       console.warn('[EcO Cache] Failed to load local cache:', e);
     }
@@ -1769,11 +1706,12 @@ export class HybridFirebaseRepository {
     if (!validateConnectionCode(code)) {
       return { success: false, error: 'Invalid connection code format. Format: ECO-XXXXXX' };
     }
-    if (code === this.myConnectionCode) {
+    const myCode = formatConnectionCode(this.myConnectionCode);
+    if (code === myCode) {
       return { success: false, error: 'You cannot connect to your own EcO Connection Code.' };
     }
 
-    const existing = this.connections.find((c) => c.peerCode === code);
+    const existing = this.connections.find((c) => formatConnectionCode(c.peerCode) === code);
     if (existing) {
       return { success: false, error: `You are already connected with ${existing.peerName} (${code}).` };
     }
@@ -1783,9 +1721,16 @@ export class HybridFirebaseRepository {
     const peerName = customPeerName?.trim() || found?.displayName || `EcO Friend (${code})`;
 
     const connId = `conn_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const participants = Array.from(new Set([
+      this.activeUserId || 'local_user',
+      this.myConnectionCode,
+      peerUserId,
+      code
+    ].filter(Boolean)));
+
     const newConn: EcOConnection = {
       id: connId,
-      participants: [this.activeUserId || 'local_user', peerUserId],
+      participants,
       userAId: this.activeUserId || 'local_user',
       userAName: this.userDisplayName,
       userACode: this.myConnectionCode,
@@ -1806,13 +1751,13 @@ export class HybridFirebaseRepository {
     // Automatically ensure PersonRecord exists in local People ledger
     let person = this.people.find(
       (p) =>
-        (code && p.connectionCode === code) ||
+        (code && formatConnectionCode(p.connectionCode || '') === code) ||
         (peerUserId && p.connectedUserId === peerUserId) ||
         p.name.toLowerCase() === peerName.toLowerCase()
     );
     if (!person) {
       person = {
-        id: `person_conn_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+        id: `person_conn_${code.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
         name: peerName,
         isConnected: true,
         connectionCode: code,
@@ -1820,7 +1765,7 @@ export class HybridFirebaseRepository {
         createdAt: new Date().toISOString()
       };
       await this.addPerson(person);
-    } else if (!person.isConnected || person.connectionCode !== code) {
+    } else if (!person.isConnected || formatConnectionCode(person.connectionCode || '') !== code) {
       await this.updatePerson({
         ...person,
         isConnected: true,
@@ -1889,13 +1834,20 @@ export class HybridFirebaseRepository {
       return { success: false, error: 'Proposal amount must be greater than 0.' };
     }
     const code = formatConnectionCode(params.recipientCode);
-    const conn = this.connections.find((c) => c.peerCode === code);
+    const conn = this.connections.find((c) => formatConnectionCode(c.peerCode) === code);
     const recipientUserId = conn?.peerUserId || code;
 
     const propId = `prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const participants = Array.from(new Set([
+      this.activeUserId || 'local_user',
+      this.myConnectionCode,
+      recipientUserId,
+      code
+    ].filter(Boolean)));
+
     const proposal: EcOProposal = {
       id: propId,
-      participants: [this.activeUserId || 'local_user', recipientUserId],
+      participants,
       connectionId: conn?.id,
       senderUserId: this.activeUserId || 'local_user',
       senderName: this.userDisplayName,
@@ -1914,6 +1866,52 @@ export class HybridFirebaseRepository {
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
+
+    // Ensure PersonRecord exists in sender's ledger
+    let person = this.people.find(
+      (p) =>
+        (code && formatConnectionCode(p.connectionCode || '') === code) ||
+        (recipientUserId && p.connectedUserId === recipientUserId) ||
+        p.name.toLowerCase() === params.recipientName.toLowerCase()
+    );
+    if (!person) {
+      person = {
+        id: `person_peer_${code.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+        name: params.recipientName,
+        isConnected: true,
+        connectionCode: code,
+        connectedUserId: recipientUserId,
+        createdAt: new Date().toISOString()
+      };
+      await this.addPerson(person);
+    } else if (!person.isConnected) {
+      await this.updatePerson({
+        ...person,
+        isConnected: true,
+        connectionCode: code,
+        connectedUserId: recipientUserId
+      });
+    }
+
+    // Record a pending transaction in sender's ledger
+    // Note: status is 'pending', so calculateFinancialSummary skips it until accepted.
+    const senderPendingTx: PeerTransactionRecord = {
+      id: `tx_prop_${propId}_sender`,
+      personId: person.id,
+      type: params.type,
+      amount: params.amount,
+      totalAmount: params.amount,
+      payMethodId: params.payMethodId || this.getCashMethodId(),
+      tag: params.isRepayment ? 'Repayment' : 'Shared Debt',
+      description: params.note
+        ? `${params.note} (Pending confirmation)`
+        : `${params.isRepayment ? 'Repayment' : 'Loan'} proposal sent`,
+      date: params.date,
+      timestamp: Date.now(),
+      status: 'pending',
+      proposalId: propId
+    };
+    await this.addTransaction(senderPendingTx);
 
     await this.addProposal(proposal);
     return { success: true, proposal };
@@ -1965,25 +1963,29 @@ export class HybridFirebaseRepository {
     const updatedProp: EcOProposal = {
       ...prop,
       status: 'accepted',
+      recipientPayMethodId: payMethodId,
       updatedAt: Date.now()
     };
 
-    // The other peer from current user's perspective
-    const isRecipient = prop.senderUserId !== this.activeUserId;
+    const myCode = formatConnectionCode(this.myConnectionCode);
+    const isRecipient = (prop.recipientCode && formatConnectionCode(prop.recipientCode) === myCode) ||
+                        (this.activeUserId && prop.recipientUserId === this.activeUserId) ||
+                        (prop.senderUserId !== this.activeUserId);
+
     const peerName = isRecipient ? prop.senderName : prop.recipientName;
     const peerCode = isRecipient ? prop.senderCode : prop.recipientCode;
     const peerUid = isRecipient ? prop.senderUserId : prop.recipientUserId;
 
     let person = this.people.find(
       (p) =>
-        (peerCode && p.connectionCode === peerCode) ||
+        (peerCode && formatConnectionCode(p.connectionCode || '') === formatConnectionCode(peerCode)) ||
         (peerUid && p.connectedUserId === peerUid) ||
         p.name.toLowerCase() === peerName.toLowerCase()
     );
 
     if (!person) {
       person = {
-        id: `person_peer_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+        id: `person_peer_${peerCode ? peerCode.toLowerCase().replace(/[^a-z0-9]/g, '_') : Date.now()}`,
         name: peerName,
         isConnected: true,
         connectionCode: peerCode,
@@ -2000,33 +2002,58 @@ export class HybridFirebaseRepository {
       });
     }
 
-    // Direction: recipientPerspectiveType if accepting received proposal; originalSenderType if self-accepting
+    // Direction: recipientPerspectiveType if recipient is accepting; originalSenderType if sender is confirming
     const txType = isRecipient ? prop.recipientPerspectiveType : prop.originalSenderType;
+    const walletToUse = isRecipient ? (payMethodId || this.getCashMethodId()) : (prop.payMethodId || this.getCashMethodId());
 
     const txDesc = prop.note
-      ? `${prop.note} (via EcO Proposal)`
+      ? `${prop.note} (Confirmed)`
       : prop.isRepayment
       ? `Repayment confirmed with ${peerName}`
       : `Shared loan with ${peerName}`;
 
-    const newTx: PeerTransactionRecord = {
-      id: `tx_prop_${prop.id}_${isRecipient ? 'rec' : 'sender'}`,
-      personId: person.id,
-      type: txType,
-      amount: prop.amount,
-      totalAmount: prop.amount,
-      payMethodId: payMethodId || this.getCashMethodId(),
-      tag: prop.isRepayment ? 'Repayment' : 'Shared Debt',
-      description: txDesc,
-      date: prop.date,
-      timestamp: Date.now(),
-      status: 'accepted',
-      proposalId: prop.id
-    };
-    await this.addTransaction(newTx);
+    const txId = `tx_prop_${prop.id}_${isRecipient ? 'rec' : 'sender'}`;
+    const existingTx = this.transactions.find((t) => t.id === txId || t.proposalId === prop.id);
+
+    if (existingTx) {
+      await this.updateTransaction({
+        ...existingTx,
+        status: 'accepted',
+        type: txType,
+        payMethodId: walletToUse,
+        description: txDesc,
+        timestamp: Date.now()
+      });
+    } else {
+      const newTx: PeerTransactionRecord = {
+        id: txId,
+        personId: person.id,
+        type: txType,
+        amount: prop.amount,
+        totalAmount: prop.amount,
+        payMethodId: walletToUse,
+        tag: prop.isRepayment ? 'Repayment' : 'Shared Debt',
+        description: txDesc,
+        date: prop.date,
+        timestamp: Date.now(),
+        status: 'accepted',
+        proposalId: prop.id
+      };
+      await this.addTransaction(newTx);
+    }
+
+    // Mark any related incoming notification as read
+    const relatedNotif = this.notifications.find((n) => n.relatedId === proposalId || n.id === `notif_prop_${proposalId}`);
+    if (relatedNotif && !relatedNotif.readAt) {
+      await this.markNotificationRead(relatedNotif.id);
+    }
 
     // Update proposal document in Firestore / localStorage
     await this.updateProposal(updatedProp);
+
+    // Ensure all transactions are synchronized
+    await this.ensureTransactionsForAcceptedProposals();
+
     return { success: true };
   }
 
@@ -2040,6 +2067,17 @@ export class HybridFirebaseRepository {
       disputeReason: reason.trim() || 'Amount or terms disputed',
       updatedAt: Date.now()
     };
+
+    // Update any linked transaction
+    const tx = this.transactions.find((t) => t.proposalId === proposalId || t.id.includes(proposalId));
+    if (tx && tx.status === 'pending') {
+      await this.updateTransaction({
+        ...tx,
+        status: 'disputed',
+        description: `${tx.description} [Disputed: ${reason.trim()}]`
+      });
+    }
+
     await this.updateProposal(updated);
     return { success: true };
   }
@@ -2052,7 +2090,206 @@ export class HybridFirebaseRepository {
       status: 'rejected',
       updatedAt: Date.now()
     };
+
+    // Update or remove any pending transaction
+    const tx = this.transactions.find((t) => t.proposalId === proposalId || t.id.includes(proposalId));
+    if (tx && tx.status === 'pending') {
+      await this.updateTransaction({
+        ...tx,
+        status: 'rejected'
+      });
+    }
+
+    // Mark related notification as read
+    const notif = this.notifications.find((n) => n.relatedId === proposalId || n.id === `notif_prop_${proposalId}`);
+    if (notif && !notif.readAt) {
+      await this.markNotificationRead(notif.id);
+    }
+
     await this.updateProposal(updated);
+  }
+
+  /**
+   * Scans all accepted and pending proposals to ensure:
+   * 1. Sender and recipient have their corresponding ledger transactions registered and synchronized.
+   * 2. Notifications are dispatched for incoming proposals and confirmed proposals.
+   */
+  async ensureTransactionsForAcceptedProposals(): Promise<void> {
+    const myCode = formatConnectionCode(this.myConnectionCode);
+    const myUid = this.activeUserId;
+
+    for (const p of this.proposals) {
+      const senderCode = formatConnectionCode(p.senderCode || '');
+      const recipientCode = formatConnectionCode(p.recipientCode || '');
+
+      const isSender = (senderCode && senderCode === myCode) || (myUid && p.senderUserId === myUid);
+      const isRecipient = (recipientCode && recipientCode === myCode) || (myUid && p.recipientUserId === myUid);
+
+      // 1. If proposal is pending and user is recipient, ensure notification exists
+      if (p.status === 'pending' && isRecipient && !isSender) {
+        const notifExists = this.notifications.some((n) => n.relatedId === p.id || n.id === `notif_prop_${p.id}`);
+        if (!notifExists) {
+          const notif: AppNotification = {
+            id: `notif_prop_${p.id}`,
+            type: 'proposal_received',
+            title: `⚡ New EcO ${p.isRepayment ? 'Repayment' : 'Debt'} Request`,
+            body: `${p.senderName} (${p.senderCode || 'peer'}) requested to ${
+              p.originalSenderType === 'give' ? (p.isRepayment ? 'record repayment of' : 'lend you') : (p.isRepayment ? 'receive repayment of' : 'borrow from you')
+            } ৳${Number(p.amount).toLocaleString()}. Tap to accept or reject.`,
+            createdAt: p.createdAt || Date.now(),
+            readAt: null,
+            expiresAt: Date.now() + 7 * 86400000,
+            relatedType: 'proposal',
+            relatedId: p.id
+          };
+          await this.addNotification(notif);
+        }
+      }
+
+      // 2. If proposal is accepted, ensure transactions exist with confirmed status
+      if (p.status === 'accepted') {
+        if (isSender) {
+          // Check sender's transaction
+          const existingTx = this.transactions.find(
+            (t) => t.id === `tx_prop_${p.id}_sender` || t.proposalId === p.id
+          );
+          if (!existingTx) {
+            let senderPerson = this.people.find(
+              (pe) =>
+                (recipientCode && formatConnectionCode(pe.connectionCode || '') === recipientCode) ||
+                (p.recipientUserId && pe.connectedUserId === p.recipientUserId) ||
+                pe.name.toLowerCase() === p.recipientName.toLowerCase()
+            );
+            if (!senderPerson) {
+              senderPerson = {
+                id: `person_peer_${recipientCode ? recipientCode.toLowerCase().replace(/[^a-z0-9]/g, '_') : Date.now()}`,
+                name: p.recipientName,
+                isConnected: true,
+                connectionCode: recipientCode || p.recipientCode,
+                connectedUserId: p.recipientUserId,
+                createdAt: new Date().toISOString()
+              };
+              await this.addPerson(senderPerson);
+            }
+            const senderTx: PeerTransactionRecord = {
+              id: `tx_prop_${p.id}_sender`,
+              personId: senderPerson.id,
+              type: p.originalSenderType,
+              amount: p.amount,
+              totalAmount: p.amount,
+              payMethodId: p.payMethodId || this.getCashMethodId(),
+              tag: p.isRepayment ? 'Repayment' : 'Shared Debt',
+              description: p.note
+                ? `${p.note} (Confirmed)`
+                : p.isRepayment
+                ? `Repayment confirmed with ${p.recipientName}`
+                : `Shared loan with ${p.recipientName}`,
+              date: p.date,
+              timestamp: p.updatedAt || Date.now(),
+              status: 'accepted',
+              proposalId: p.id
+            };
+            await this.addTransaction(senderTx);
+          } else if (existingTx.status === 'pending') {
+            // Update pending transaction to accepted
+            await this.updateTransaction({
+              ...existingTx,
+              status: 'accepted',
+              description: p.note
+                ? `${p.note} (Confirmed)`
+                : p.isRepayment
+                ? `Repayment confirmed with ${p.recipientName}`
+                : `Shared loan with ${p.recipientName}`,
+              timestamp: p.updatedAt || Date.now()
+            });
+          }
+
+          // Ensure sender has an acceptance notification
+          const acceptNotifExists = this.notifications.some((n) => n.id === `notif_prop_accepted_${p.id}`);
+          if (!acceptNotifExists) {
+            const notif: AppNotification = {
+              id: `notif_prop_accepted_${p.id}`,
+              type: 'proposal_accepted',
+              title: `✅ EcO Proposal Confirmed`,
+              body: `${p.recipientName} confirmed your ${p.isRepayment ? 'repayment' : 'loan'} proposal of ৳${Number(p.amount).toLocaleString()}. Automatically added to your ledger!`,
+              createdAt: p.updatedAt || Date.now(),
+              readAt: null,
+              expiresAt: Date.now() + 7 * 86400000,
+              relatedType: 'proposal',
+              relatedId: p.id
+            };
+            await this.addNotification(notif);
+          }
+        }
+
+        if (isRecipient) {
+          // Check recipient's transaction
+          const existingTx = this.transactions.find(
+            (t) => t.id === `tx_prop_${p.id}_rec` || t.proposalId === p.id
+          );
+          if (!existingTx) {
+            let recipientPerson = this.people.find(
+              (pe) =>
+                (senderCode && formatConnectionCode(pe.connectionCode || '') === senderCode) ||
+                (p.senderUserId && pe.connectedUserId === p.senderUserId) ||
+                pe.name.toLowerCase() === p.senderName.toLowerCase()
+            );
+            if (!recipientPerson) {
+              recipientPerson = {
+                id: `person_peer_${senderCode ? senderCode.toLowerCase().replace(/[^a-z0-9]/g, '_') : Date.now()}`,
+                name: p.senderName,
+                isConnected: true,
+                connectionCode: senderCode || p.senderCode,
+                connectedUserId: p.senderUserId,
+                createdAt: new Date().toISOString()
+              };
+              await this.addPerson(recipientPerson);
+            }
+            const recTx: PeerTransactionRecord = {
+              id: `tx_prop_${p.id}_rec`,
+              personId: recipientPerson.id,
+              type: p.recipientPerspectiveType,
+              amount: p.amount,
+              totalAmount: p.amount,
+              payMethodId: p.recipientPayMethodId || p.payMethodId || this.getCashMethodId(),
+              tag: p.isRepayment ? 'Repayment' : 'Shared Debt',
+              description: p.note
+                ? `${p.note} (Confirmed)`
+                : p.isRepayment
+                ? `Repayment confirmed with ${p.senderName}`
+                : `Shared loan with ${p.senderName}`,
+              date: p.date,
+              timestamp: p.updatedAt || Date.now(),
+              status: 'accepted',
+              proposalId: p.id
+            };
+            await this.addTransaction(recTx);
+          }
+        }
+      }
+
+      // 3. If proposal is rejected or cancelled, update any pending transaction status
+      if (p.status === 'rejected' || p.status === 'cancelled') {
+        const tx = this.transactions.find((t) => t.proposalId === p.id);
+        if (tx && tx.status === 'pending') {
+          await this.updateTransaction({
+            ...tx,
+            status: p.status
+          });
+        }
+      }
+
+      // 4. If proposal is disputed, update any pending transaction status
+      if (p.status === 'disputed') {
+        const tx = this.transactions.find((t) => t.proposalId === p.id);
+        if (tx && tx.status === 'pending') {
+          await this.updateTransaction({
+            ...tx,
+            status: 'disputed'
+          });
+        }
+      }
+    }
   }
 
   getCommunityIssues(): IssueReport[] {
