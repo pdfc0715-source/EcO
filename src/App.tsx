@@ -25,7 +25,7 @@ import {
 } from './domain/types';
 import { calculateFinancialSummary } from './domain/calculations';
 import { BUILTIN_BKASH_ID, BUILTIN_NAGAD_ID } from './domain/paymentMethods';
-import { invertProposalDirection } from './domain/connections';
+import { invertProposalDirection, formatConnectionCode } from './domain/connections';
 import { Navigation, NavTab } from './components/Navigation';
 import { Header } from './components/Header';
 import { NotificationModal } from './components/NotificationModal';
@@ -479,13 +479,20 @@ export default function App() {
 
   // Pending incoming proposals requiring recipient confirmation (unconditionally declared before any early returns)
   const pendingIncomingProposals = useMemo(() => {
+    const myCode = formatConnectionCode(myConnectionCode);
+    const uid = user?.uid;
+
     return proposals.filter((p) => {
       if (p.status !== 'pending' && p.status !== 'disputed') return false;
-      const uid = user?.uid;
-      const isRecipient =
-        (uid && p.recipientUserId === uid) ||
-        (myConnectionCode && p.recipientCode === myConnectionCode) ||
-        (uid && p.senderUserId !== uid);
+      const recCode = formatConnectionCode(p.recipientCode || '');
+      const sendCode = formatConnectionCode(p.senderCode || '');
+
+      // Check if current user is the sender (if so, it is outgoing, not incoming)
+      const isSender = (sendCode && sendCode === myCode) || (uid && p.senderUserId === uid);
+      if (isSender) return false;
+
+      // Check if current user is the recipient
+      const isRecipient = (recCode && recCode === myCode) || (uid && p.recipientUserId === uid);
       return isRecipient;
     });
   }, [proposals, user?.uid, myConnectionCode]);
