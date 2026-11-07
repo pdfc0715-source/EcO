@@ -468,20 +468,29 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
     setDisputeReasonInput('');
   };
 
-  const isMySentProposal = (p: EcOProposal) =>
-    p.senderCode === myConnectionCode || (p.senderUserId && p.senderUserId === myConnectionCode);
+  const myCode = formatConnectionCode(myConnectionCode);
+
+  const isMySentProposal = (p: EcOProposal) => {
+    const sCode = formatConnectionCode(p.senderCode || '');
+    return Boolean(myCode && sCode === myCode);
+  };
+
+  const isMyReceivedProposal = (p: EcOProposal) => {
+    const rCode = formatConnectionCode(p.recipientCode || '');
+    return Boolean(myCode && rCode === myCode);
+  };
 
   const incomingPending = useMemo(
-    () => proposals.filter((p) => p.status === 'pending' && !isMySentProposal(p)),
-    [proposals, myConnectionCode]
+    () => proposals.filter((p) => (p.status === 'pending' || p.status === 'disputed') && isMyReceivedProposal(p) && !isMySentProposal(p)),
+    [proposals, myCode]
   );
   const outgoingPending = useMemo(
     () => proposals.filter((p) => p.status === 'pending' && isMySentProposal(p)),
-    [proposals, myConnectionCode]
+    [proposals, myCode]
   );
   const disputedProposals = useMemo(
-    () => proposals.filter((p) => p.status === 'disputed'),
-    [proposals]
+    () => proposals.filter((p) => p.status === 'disputed' && (isMyReceivedProposal(p) || isMySentProposal(p))),
+    [proposals, myCode]
   );
 
   return (
@@ -686,11 +695,19 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
                         {p.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-semibold text-[#E2E2E8] group-hover:text-[#73E3B4] transition-colors truncate">
-                          {p.name}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-semibold text-[#E2E2E8] group-hover:text-[#73E3B4] transition-colors truncate">
+                            {p.name}
+                          </span>
+                          {p.isConnected && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#73E3B4]/15 text-[#73E3B4] border border-[#73E3B4]/30 flex items-center gap-1 shrink-0">
+                              <Link2 className="w-2.5 h-2.5" />
+                              <span>{p.connectionCode || 'EcO Connected'}</span>
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] text-[#87948C] mt-0.5 truncate">
-                          {p.phone ? p.phone : 'Local contact (no phone)'}
+                          {p.phone ? p.phone : p.isConnected ? 'Connected EcO Peer' : 'Local contact (no phone)'}
                         </div>
                       </div>
                     </div>
@@ -1565,9 +1582,17 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
                   {selectedPerson.name.charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-[#E2E2E8]">
-                    {selectedPerson.name}
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-[#E2E2E8]">
+                      {selectedPerson.name}
+                    </h3>
+                    {selectedPerson.isConnected && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#73E3B4]/15 text-[#73E3B4] border border-[#73E3B4]/30 flex items-center gap-1">
+                        <Link2 className="w-2.5 h-2.5" />
+                        <span>{selectedPerson.connectionCode || 'Connected'}</span>
+                      </span>
+                    )}
+                  </div>
                   <div className="text-[11px] text-[#BCCAC1]">
                     Net balance:{' '}
                     <span
@@ -1605,17 +1630,48 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
             </div>
 
             {/* Quick action bar */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => {
                   onOpenAddPeerTransaction(selectedPerson.id);
                   setSelectedPerson(null);
                 }}
-                className="flex-1 py-2 px-3 rounded-lg bg-[#55C79A] hover:bg-[#73E3B4] text-[#003826] font-semibold text-xs text-center transition-colors shadow-sm"
+                className="flex-1 min-w-[140px] py-2 px-3 rounded-lg bg-[#55C79A] hover:bg-[#73E3B4] text-[#003826] font-semibold text-xs text-center transition-colors shadow-sm cursor-pointer"
               >
                 + Record Give / Take
               </button>
+              {selectedPerson.isConnected && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const conn = connections.find((c) =>
+                      (selectedPerson.connectionCode && formatConnectionCode(c.peerCode) === formatConnectionCode(selectedPerson.connectionCode)) ||
+                      (selectedPerson.connectedUserId && c.peerUserId === selectedPerson.connectedUserId)
+                    );
+                    if (conn) {
+                      handleOpenProposeForPeer(conn, 'loan');
+                      setSelectedPerson(null);
+                    } else if (onCreateProposal && selectedPerson.connectionCode) {
+                      handleOpenProposeForPeer({
+                        id: `conn_${selectedPerson.id}`,
+                        peerUserId: selectedPerson.connectedUserId || selectedPerson.connectionCode,
+                        peerName: selectedPerson.name,
+                        peerCode: selectedPerson.connectionCode,
+                        status: 'connected',
+                        createdAt: Date.now(),
+                        updatedAt: Date.now()
+                      }, 'loan');
+                      setSelectedPerson(null);
+                    }
+                  }}
+                  className="py-2 px-3 rounded-lg bg-[#0C0E12] hover:bg-[#1E2024] text-[#73E3B4] border border-[#73E3B4]/50 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Send mutual confirmation proposal"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Send EcO Proposal</span>
+                </button>
+              )}
               {(personBalances.get(selectedPerson.id) || 0) > 0 && (
                 <button
                   type="button"
