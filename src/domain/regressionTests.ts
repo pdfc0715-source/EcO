@@ -1065,5 +1065,188 @@ export function runAllRegressionTests(): TestResult[] {
     results.push({ name: 'Smart Settlement Test Suite', passed: false, error: e.message });
   }
 
+  // Test 34: Two-User EcO Connected Lending, Repayment Inversion & Auto-Calculation
+  try {
+    // 1. Initial setups for User A and User B
+    const userA_cash: PaymentMethod = {
+      id: 'ua_cash',
+      name: 'Cash',
+      type: 'cash',
+      isBuiltIn: true,
+      isActive: true,
+      balance: 5000,
+      openingBalance: 5000,
+      createdAt: '',
+      updatedAt: ''
+    };
+    const userA_personB: PersonRecord = {
+      id: 'ua_person_b',
+      name: 'Tanvir (User B)',
+      isConnected: true,
+      connectionCode: 'ECO-B8X2K9',
+      createdAt: ''
+    };
+
+    const userB_nagad: PaymentMethod = {
+      id: 'ub_nagad',
+      name: 'Nagad',
+      type: 'mobile_money',
+      isBuiltIn: false,
+      isActive: true,
+      balance: 2000,
+      openingBalance: 2000,
+      createdAt: '',
+      updatedAt: ''
+    };
+    const userB_personA: PersonRecord = {
+      id: 'ub_person_a',
+      name: 'Siam (User A)',
+      isConnected: true,
+      connectionCode: 'ECO-A4M1P3',
+      createdAt: ''
+    };
+
+    // 2. User A proposes to lend ৳1,000 to User B (type: 'give')
+    const loanProposalType = 'give';
+    const recipientInvertedType = invertProposalDirection(loanProposalType); // MUST be 'take'
+
+    // While pending: User A's ledger has a pending transaction
+    const pendingTxA: PeerTransactionRecord = {
+      id: 'tx_prop_101_sender',
+      personId: 'ua_person_b',
+      type: loanProposalType,
+      amount: 1000,
+      totalAmount: 1000,
+      payMethodId: 'ua_cash',
+      tag: 'Shared Debt',
+      description: 'Lending proposal sent',
+      date: '2026-11-06',
+      timestamp: 1,
+      status: 'pending',
+      proposalId: 'prop_101'
+    };
+
+    const pendingSummaryA = calculateFinancialSummary([userA_cash], [], [], [], [], [pendingTxA], [userA_personB]);
+    const pendingCashA = pendingSummaryA.walletBalances[0].currentBalance; // 5000 (pending ignored)
+    const pendingDebtA = pendingSummaryA.personBalances.get('ua_person_b') || 0; // 0 (pending ignored)
+
+    // 3. User B confirms & accepts proposal with Nagad wallet
+    const confirmedTxA: PeerTransactionRecord = {
+      ...pendingTxA,
+      status: 'accepted',
+      description: 'Shared loan with Tanvir'
+    };
+    const confirmedTxB: PeerTransactionRecord = {
+      id: 'tx_prop_101_rec',
+      personId: 'ub_person_a',
+      type: recipientInvertedType, // 'take'
+      amount: 1000,
+      totalAmount: 1000,
+      payMethodId: 'ub_nagad',
+      tag: 'Shared Debt',
+      description: 'Shared loan with Siam',
+      date: '2026-11-06',
+      timestamp: 2,
+      status: 'accepted',
+      proposalId: 'prop_101'
+    };
+
+    const confirmedSumA = calculateFinancialSummary([userA_cash], [], [], [], [], [confirmedTxA], [userA_personB]);
+    const confirmedSumB = calculateFinancialSummary([userB_nagad], [], [], [], [], [confirmedTxB], [userB_personA]);
+
+    const cashAfterLoanA = confirmedSumA.walletBalances[0].currentBalance; // 5000 - 1000 = 4000
+    const receivableA = confirmedSumA.personBalances.get('ua_person_b') || 0; // +1000 (User A is owed 1000)
+
+    const nagadAfterLoanB = confirmedSumB.walletBalances[0].currentBalance; // 2000 + 1000 = 3000
+    const payableB = confirmedSumB.personBalances.get('ub_person_a') || 0; // -1000 (User B owes 1000)
+
+    // 4. User B repays User A ৳400 (User B 'give', User A 'take', isRepayment: true)
+    const repayProposalType = 'give';
+    const repayRecipientType = invertProposalDirection(repayProposalType); // 'take'
+
+    const repayTxB: PeerTransactionRecord = {
+      id: 'tx_prop_102_sender',
+      personId: 'ub_person_a',
+      type: repayProposalType, // 'give' (User B pays)
+      amount: 400,
+      totalAmount: 400,
+      payMethodId: 'ub_nagad',
+      tag: 'Repayment',
+      description: 'Repayment to Siam',
+      date: '2026-11-06',
+      timestamp: 3,
+      status: 'accepted',
+      proposalId: 'prop_102'
+    };
+
+    const repayTxA: PeerTransactionRecord = {
+      id: 'tx_prop_102_rec',
+      personId: 'ua_person_b',
+      type: repayRecipientType, // 'take' (User A receives)
+      amount: 400,
+      totalAmount: 400,
+      payMethodId: 'ua_cash',
+      tag: 'Repayment',
+      description: 'Repayment from Tanvir',
+      date: '2026-11-06',
+      timestamp: 4,
+      status: 'accepted',
+      proposalId: 'prop_102'
+    };
+
+    const finalSumA = calculateFinancialSummary([userA_cash], [], [], [], [], [confirmedTxA, repayTxA], [userA_personB]);
+    const finalSumB = calculateFinancialSummary([userB_nagad], [], [], [], [], [confirmedTxB, repayTxB], [userB_personA]);
+
+    const cashFinalA = finalSumA.walletBalances[0].currentBalance; // 4000 + 400 = 4400
+    const debtFinalA = finalSumA.personBalances.get('ua_person_b') || 0; // 1000 - 400 = +600 (Tanvir now owes Siam 600)
+
+    const nagadFinalB = finalSumB.walletBalances[0].currentBalance; // 3000 - 400 = 2600
+    const debtFinalB = finalSumB.personBalances.get('ub_person_a') || 0; // -1000 + 400 = -600 (Tanvir now owes Siam 600)
+
+    const passed =
+      recipientInvertedType === 'take' &&
+      pendingCashA === 5000 &&
+      pendingDebtA === 0 &&
+      cashAfterLoanA === 4000 &&
+      receivableA === 1000 &&
+      nagadAfterLoanB === 3000 &&
+      payableB === -1000 &&
+      cashFinalA === 4400 &&
+      debtFinalA === 600 &&
+      nagadFinalB === 2600 &&
+      debtFinalB === -600;
+
+    results.push({
+      name: 'Two-User EcO Lending, Repayment Inversion & Auto-Calculation (Loan ৳1,000 + Repayment ৳400 -> Debt ৳600)',
+      passed,
+      actual: {
+        loanInversion: recipientInvertedType,
+        pendingCashA,
+        cashAfterLoanA,
+        receivableA,
+        nagadAfterLoanB,
+        payableB,
+        cashFinalA,
+        debtFinalA,
+        nagadFinalB,
+        debtFinalB
+      },
+      expected: {
+        loanInversion: 'take',
+        pendingCashA: 5000,
+        cashAfterLoanA: 4000,
+        receivableA: 1000,
+        nagadAfterLoanB: 3000,
+        payableB: -1000,
+        cashFinalA: 4400,
+        debtFinalA: 600,
+        nagadFinalB: 2600,
+        debtFinalB: -600
+      }
+    });
+  } catch (e: any) {
+    results.push({ name: 'Two-User EcO Lending Auto-Calculation Test', passed: false, error: e.message });
+  }
+
   return results;
 }
