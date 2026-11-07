@@ -200,6 +200,7 @@ export interface EcOProposal {
   date: string;
   note?: string;
   payMethodId?: string;
+  recipientPayMethodId?: string;
   status: ProposalStatus;
   disputeReason?: string;
   createdAt: number;
