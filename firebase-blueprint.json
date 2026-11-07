@@ -246,6 +246,39 @@
         "updatedAt": { "type": "number" }
       },
       "required": ["id", "cash"]
+    },
+    "SmartSettlement": {
+      "title": "SmartSettlement",
+      "description": "Smart Settlement group expense and debt resolution sessions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "creatorUserId": { "type": "string" },
+        "members": { "type": "array" },
+        "expenses": { "type": "array" },
+        "payments": { "type": "array" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "members"]
+    },
+    "CommunityIssue": {
+      "title": "CommunityIssue",
+      "description": "User bug reports and feedback items with votes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "upvotes": { "type": "number" },
+        "downvotes": { "type": "number" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "description"]
     }
   },
   "firestore": {
